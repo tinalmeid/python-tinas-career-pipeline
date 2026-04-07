@@ -1,0 +1,53 @@
+# ===================================================================================
+# requirements.txt
+# ===================================================================================
+# OBJETIVO: Dependências OBRIGATÓRIAS para o projeto rodar em PRODUÇÃO
+#
+# Quando usar:
+#   - Ambiente de produção (servidor, container Docker)
+#   - O que o usuário final precisa para o sistema funcionar
+#
+# Como instalar:
+#   pip install -r requirements.txt
+#
+# ATENÇÃO: Não coloque libs de teste ou desenvolvimento aqui!
+# ===================================================================================
+
+# -----------------------------------------------------------------------------------
+# Core / Framework (HTTP, validação, configuração)
+# -----------------------------------------------------------------------------------
+httpx==0.27.2              # Cliente HTTP assíncrono (chamar APIs externas)
+python-dotenv==1.0.1       # Carrega variáveis do arquivo .env
+pydantic==2.10.4           # Validação de dados (schemas, modelos)
+pydantic-settings==2.6.1   # Gerencia configurações com Pydantic
+
+# -----------------------------------------------------------------------------------
+# Database (Banco de dados)
+# -----------------------------------------------------------------------------------
+asyncpg==0.30.0            # Driver PostgreSQL assíncrono (RÁPIDO)
+psycopg2-binary==2.9.10    # Driver PostgreSQL síncrono (fallback)
+sqlalchemy==2.0.36         # ORM (mapeamento objeto-relacional)
+alembic==1.14.1            # Migrations (controle de versão do banco)
+
+# -----------------------------------------------------------------------------------
+# API (FastAPI + servidor)
+# -----------------------------------------------------------------------------------
+fastapi==0.115.6           # Framework web (assíncrono, moderno)
+uvicorn[standard]==0.34.0  # Servidor ASGI (roda a aplicação)
+python-jose[cryptography]==3.3.0  # JWT (tokens de autenticação)
+passlib[bcrypt]==1.7.4     # Hashing de senhas (bcrypt)
+python-multipart==0.0.20   # Upload de arquivos / formulários
+
+# -----------------------------------------------------------------------------------
+# Observability (Monitoramento)
+# -----------------------------------------------------------------------------------
+prometheus-client==0.21.0  # Métricas para Prometheus
+opentelemetry-api==1.28.2  # Tracer (rastreamento distribuído)
+opentelemetry-sdk==1.28.2  # SDK do OpenTelemetry
+opentelemetry-instrumentation-fastapi==0.49b2  # Monitora FastAPI
+
+# -----------------------------------------------------------------------------------
+# Utils (Utilidades gerais)
+# -----------------------------------------------------------------------------------
+python-dateutil==2.9.0     # Manipulação de datas (mais flexível que datetime)
+tenacity==9.0.0            # Retry automático (re-tenta operações que falham)

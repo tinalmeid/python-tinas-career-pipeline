@@ -1,0 +1,57 @@
+# ===================================================================================
+# requirements-dev.txt
+# ===================================================================================
+# OBJETIVO: Ferramentas usadas SOMENTE durante o DESENVOLVIMENTO e TESTES
+#
+# Quando usar:
+#   - Ambiente local do desenvolvedor
+#   - Pipeline de CI (para rodar testes)
+#   - NUNCA em produção!
+#
+# Como instalar:
+#   pip install -r requirements-dev.txt
+#
+# ATENÇÃO: Este arquivo JÁ INCLUI o requirements.txt (herança)
+# ===================================================================================
+
+# Primeiro, instala todas as dependências de produção
+-r requirements.txt
+
+# -----------------------------------------------------------------------------------
+# Testing (Testes)
+# -----------------------------------------------------------------------------------
+pytest==8.3.4               # Framework de testes (runner)
+pytest-asyncio==0.24.0      # Suporte a testes assíncronos (async/await)
+pytest-cov==6.0.0           # Mede cobertura de código (% testado)
+pytest-mock==3.14.0         # Mocking (simula comportamentos)
+
+# -----------------------------------------------------------------------------------
+# Code Quality (Qualidade de código)
+# -----------------------------------------------------------------------------------
+black==24.10.0              # Formatador automático (código bonito e padronizado)
+ruff==0.8.6                 # Linter rápido (detecta erros de estilo)
+mypy==1.14.1                # Type checker (valida tipos estáticos)
+isort==5.13.2               # Organiza imports (ordem alfabética/grupos)
+
+# -----------------------------------------------------------------------------------
+# Debugging (Depuração)
+# -----------------------------------------------------------------------------------
+ipython==8.31.0             # Shell interativo melhorado (debug poderoso)
+httpx==0.27.2               # Cliente HTTP para testar APIs manualmente
+
+# -----------------------------------------------------------------------------------
+# Security (Segurança)
+# -----------------------------------------------------------------------------------
+bandit==1.8.0               # Encontra vulnerabilidades no código
+safety==3.2.11              # Verifica dependências com CVEs conhecidos
+
+# -----------------------------------------------------------------------------------
+# Database Helpers (Ajudantes para banco de dados)
+# -----------------------------------------------------------------------------------
+sqlalchemy-utils==0.41.2    # Utilidades extras para SQLAlchemy
+faker==33.3.0               # Gera dados falsos (CPF, email, nome, etc.)
+
+# -----------------------------------------------------------------------------------
+# Coverage (Relatórios de cobertura)
+# -----------------------------------------------------------------------------------
+coverage==7.6.9             # Mede quais linhas de código foram executadas nos testes

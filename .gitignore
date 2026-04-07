@@ -1,0 +1,79 @@
+# ===================================================================================
+# .gitignore
+# ===================================================================================
+# OBJETIVO: Informar ao Git quais arquivos/pastas NÃO devem ser versionados
+#
+# Por que usar?
+#   - Evitar commitar secrets (senhas, API keys)
+#   - Evitar arquivos gerados automaticamente (bytecode, cache)
+#   - Evitar arquivos muito grandes (logs, bancos de dados)
+#   - Manter o repositório limpo
+#
+# ATENÇÃO: Este arquivo funciona em TODOS os branches do repositório
+# ===================================================================================
+
+# -----------------------------------------------------------------------------------
+# Python (bytecode e cache)
+# -----------------------------------------------------------------------------------
+__pycache__/        # Código compilado (Python gera automaticamente)
+*.py[cod]           # Arquivos .pyc, .pyo, .pyd
+*$py.class          # Python class files
+
+# -----------------------------------------------------------------------------------
+# Virtual Environment (ambiente isolado)
+# -----------------------------------------------------------------------------------
+.venv/              # Virtualenv padrão
+venv/               # Virtualenv alternativo
+env/
+ENV/
+pythonenv*/
+
+# -----------------------------------------------------------------------------------
+# Testing (relatórios de teste)
+# -----------------------------------------------------------------------------------
+.pytest_cache/      # Cache do pytest
+.coverage           # Arquivo de cobertura (raw)
+coverage.xml        # Relatório XML (enviado ao SonarCloud)
+htmlcov/            # Relatório HTML (visual)
+.tox/               # Tox (testa múltiplas versões do Python)
+
+# -----------------------------------------------------------------------------------
+# IDE (Editor de código)
+# -----------------------------------------------------------------------------------
+.vscode/            # VS Code (configurações pessoais)
+.idea/              # PyCharm / IntelliJ
+*.swp               # Arquivos swap do Vim
+.DS_Store           # MacOS (metadados de pastas)
+
+# -----------------------------------------------------------------------------------
+# Secrets and Environment (SEGREDOS - NUNCA COMMITAR!)
+# -----------------------------------------------------------------------------------
+.env                # Variáveis de ambiente REAIS (com senhas)
+.env.local          # Override local
+.env.*.local
+.secrets
+*.key               # Chaves privadas
+*.pem               # Certificados
+*.crt
+
+# -----------------------------------------------------------------------------------
+# Logs (arquivos de log)
+# -----------------------------------------------------------------------------------
+logs/
+*.log
+*.pid
+
+# -----------------------------------------------------------------------------------
+# Database (arquivos de banco local)
+# -----------------------------------------------------------------------------------
+*.db
+*.sqlite
+*.sqlite3
+
+# -----------------------------------------------------------------------------------
+# Temp files (arquivos temporários)
+# -----------------------------------------------------------------------------------
+tmp/
+temp/
+*.tmp
+*.temp

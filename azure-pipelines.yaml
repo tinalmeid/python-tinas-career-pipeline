@@ -1,0 +1,292 @@
+# azure-pipelines.yml
+# yaml-language-server: $schema=off
+# ===================================================================================
+# OBJETIVO       : Pipeline de CI para o python-tinas-career-pipeline
+#                  Detecta Python via requirements.txt, roda testes com cobertura
+#                  e envia métricas de observabilidade para Datadog, Loki e Prometheus.
+#
+# SUPORTE        : Python 3.12
+# QUALIDADE      : SonarCloud (cobertura + análise estática)
+# OBSERVABILIDADE: Datadog + Loki (Grafana Cloud) + Prometheus Pushgateway
+#
+# AUTOR          : Cristina de Almeida
+# DATA           : Abril de 2026
+# VERSION        : 1.0.0
+# ===================================================================================
+
+# -----------------------------------------------------------------------------------
+# GATILHO: Executa em pushes e PRs para a branch main
+# -----------------------------------------------------------------------------------
+trigger:
+  branches:
+    include:
+      - main
+
+pr:
+  branches:
+    include:
+      - main
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  # ---------------------------------------------------------------------------------
+  # VARIABLE GROUPS existentes (não mexa neles!)
+  # ---------------------------------------------------------------------------------
+  - group: DATADOG_API_KEY
+  - group: OBSERVABILITY_KEYS
+
+  # --- SonarCloud ---
+  - name: SONAR_ORGANIZATION
+    value: 'tinalmeid'
+
+  - name: SONAR_PROJECT_KEY
+    value: 'tinalmeid_python_tinas_career_pipeline'
+
+  - name: SONAR_PROJECT_NAME
+    value: 'python-tinas-career-pipeline'
+
+  - name: SONAR_SERVICE_CONNECTION
+    value: 'SonarCloud-Service-Connection'
+
+  # --- Python ---
+  - name: PYTHON_VERSION
+    value: '3.12'
+
+  # --- Flags ---
+  - name: isPython
+    value: 'false'
+
+  # --- Timestamp ---
+  - name: PIPELINE_START_TIME
+    value: ''
+
+  # --- Observabilidade (usando os nomes que você já tem) ---
+  - name: DATADOG_API_URL
+    value: 'https://api.datadoghq.com/api/v1/series'
+
+  - name: OBS_JOB_NAME
+    value: 'azure-pipeline-tinas-career'
+
+jobs:
+- job: SmartBuild
+  displayName: '🤖 Build & Quality — python-tinas-career-pipeline'
+
+  steps:
+
+    - checkout: self
+      fetchDepth: 0
+      displayName: '📥 Checkout do Código'
+
+    - script: |
+        echo "##vso[task.setvariable variable=PIPELINE_START_TIME]$(date +%s)"
+        echo "⏱️ Timestamp de início registrado"
+      displayName: '⏱️ Registrar Início'
+
+    - script: |
+        if find . -name "requirements.txt" -not -path "*/__pycache__/*" | grep -q .; then
+          echo "✅ Python detectado"
+          echo "##vso[task.setvariable variable=isPython]true"
+        else
+          echo "⚠️ Setup inicial"
+          echo "##vso[task.setvariable variable=isPython]true"
+        fi
+      displayName: '🔍 Detectar Linguagem'
+
+    - task: UsePythonVersion@0
+      condition: eq(variables['isPython'], 'true')
+      inputs:
+        versionSpec: '$(PYTHON_VERSION)'
+        addToPath: true
+      displayName: '🐍 Configurar Python'
+
+    - script: |
+        pip install --upgrade pip
+        if [ -f "requirements.txt" ]; then
+          pip install -r requirements.txt
+        fi
+        pip install pytest pytest-asyncio pytest-cov httpx
+      condition: eq(variables['isPython'], 'true')
+      displayName: '📦 Instalar Dependências'
+
+    - script: |
+        if find . -name "test_*.py" | grep -q .; then
+          pytest --cov=. --cov-report=xml:coverage.xml --cov-report=term-missing -v
+        else
+          echo "⚠️ Sem testes — Setup inicial (ENG-665)"
+          printf '<?xml version="1.0" ?>\n<coverage version="7.4"/>\n' > coverage.xml
+        fi
+      condition: eq(variables['isPython'], 'true')
+      displayName: '🧪 Testes + Cobertura'
+
+    - script: |
+        if [ -f "coverage.xml" ]; then
+          echo "📄 coverage.xml existe"
+          head -5 coverage.xml
+        fi
+      displayName: '🔍 Debug coverage.xml'
+      continueOnError: true
+
+    - task: SonarCloudPrepare@4
+      condition: eq(variables['isPython'], 'true')
+      inputs:
+        SonarCloud: '$(SONAR_SERVICE_CONNECTION)'
+        organization: '$(SONAR_ORGANIZATION)'
+        scannerMode: 'CLI'
+        configMode: 'file'
+      displayName: '☁️ SonarCloud — Preparar'
+
+    - task: SonarCloudAnalyze@4
+      condition: eq(variables['isPython'], 'true')
+      displayName: '☁️ SonarCloud — Analisar'
+
+    - task: SonarCloudPublish@4
+      condition: eq(variables['isPython'], 'true')
+      inputs:
+        pollingTimeoutSec: '300'
+      displayName: '☁️ SonarCloud — Publicar'
+
+    # ===============================================================================
+    # OBSERVABILIDADE - USANDO SEUS NOMES DE VARIÁVEIS EXISTENTES
+    # ===============================================================================
+
+    - script: |
+        END_TIME=$(date +%s)
+        DURATION=$((END_TIME - $(PIPELINE_START_TIME)))
+        TIMESTAMP=$(date +%s)
+        BRANCH="$(Build.SourceBranchName)"
+        PROJECT="$(System.TeamProject)"
+
+        echo "✅ Build concluído em ${DURATION}s. Enviando métricas..."
+
+        # 1. DATADOG (já funcionando)
+        if [ -n "$DATADOG_API_KEY" ]; then
+          curl --silent --fail-with-body \
+            -X POST "$DATADOG_API_URL" \
+            -H "Content-Type: application/json" \
+            -H "DD-API-KEY: $DATADOG_API_KEY" \
+            -d "{
+              \"series\": [
+                {
+                  \"metric\": \"tinas.career.pipeline.success\",
+                  \"points\": [[$TIMESTAMP, 1]],
+                  \"tags\": [\"project:$PROJECT\", \"branch:$BRANCH\", \"language:python\"]
+                },
+                {
+                  \"metric\": \"tinas.career.pipeline.duration_seconds\",
+                  \"points\": [[$TIMESTAMP, $DURATION]],
+                  \"tags\": [\"project:$PROJECT\", \"branch:$BRANCH\", \"language:python\"]
+                }
+              ]
+            }" \
+            && echo "📡 Datadog: enviado" || echo "⚠️ Datadog: falha"
+        fi
+
+        # 2. LOKI (usando LOKI_URL, LOKI_USER, LOKI_TOKEN)
+        if [ -n "$LOKI_URL" ] && [ -n "$LOKI_USER" ] && [ -n "$LOKI_TOKEN" ]; then
+          LOKI_TIMESTAMP="${TIMESTAMP}000000000"
+          curl --silent --fail-with-body \
+            -X POST "$LOKI_URL" \
+            -H "Content-Type: application/json" \
+            -u "$LOKI_USER:$LOKI_TOKEN" \
+            -d "{
+              \"streams\": [{
+                \"stream\": {
+                  \"job\": \"$(OBS_JOB_NAME)\",
+                  \"project\": \"$PROJECT\",
+                  \"branch\": \"$BRANCH\",
+                  \"status\": \"success\"
+                },
+                \"values\": [[
+                  \"$LOKI_TIMESTAMP\",
+                  \"[SUCCESS] Pipeline concluído em ${DURATION}s | Build=$(Build.BuildId)\"
+                ]]
+              }]
+            }" \
+            && echo "📋 Loki: enviado" || echo "⚠️ Loki: falha"
+        fi
+
+        # 3. PROMETHEUS (usando PROMETHEUS_URL)
+        if [ -n "$PROMETHEUS_URL" ]; then
+          printf '# HELP tinas_career_pipeline_success Resultado do pipeline\n# TYPE tinas_career_pipeline_success gauge\ntinas_career_pipeline_success{branch="%s",project="%s"} 1\n' "$BRANCH" "$PROJECT" > metrics.txt
+          printf '# HELP tinas_career_pipeline_duration_seconds Duração\n# TYPE tinas_career_pipeline_duration_seconds gauge\ntinas_career_pipeline_duration_seconds{branch="%s",project="%s"} %s\n' "$BRANCH" "$PROJECT" "$DURATION" >> metrics.txt
+
+          curl --silent --fail-with-body \
+            --data-binary @metrics.txt \
+            "$PROMETHEUS_URL/metrics/job/$(OBS_JOB_NAME)/instance/$PROJECT" \
+            && echo "📊 Prometheus: enviado" || echo "⚠️ Prometheus: falha"
+        fi
+
+      condition: succeeded()
+      displayName: '📡 Observabilidade — Sucesso'
+      env:
+        DATADOG_API_KEY: $(DATADOG_API_KEY)
+        LOKI_URL: $(LOKI_URL)
+        LOKI_USER: $(LOKI_USER)
+        LOKI_TOKEN: $(LOKI_TOKEN)
+        PROMETHEUS_URL: $(PROMETHEUS_URL)
+
+    - script: |
+        TIMESTAMP=$(date +%s)
+        LOKI_TIMESTAMP="${TIMESTAMP}000000000"
+        BRANCH="$(Build.SourceBranchName)"
+        PROJECT="$(System.TeamProject)"
+
+        echo "❌ Build falhou. Enviando alertas..."
+
+        if [ -n "$DATADOG_API_KEY" ]; then
+          curl --silent -X POST "$DATADOG_API_URL" \
+            -H "Content-Type: application/json" \
+            -H "DD-API-KEY: $DATADOG_API_KEY" \
+            -d "{\"series\":[{\"metric\":\"tinas.career.pipeline.failure\",\"points\":[[$TIMESTAMP,1]],\"tags\":[\"project:$PROJECT\",\"branch:$BRANCH\"]}]}" \
+            && echo "📡 Datadog: alerta" || echo "⚠️ Datadog: falha"
+        fi
+
+        if [ -n "$LOKI_URL" ] && [ -n "$LOKI_USER" ] && [ -n "$LOKI_TOKEN" ]; then
+          curl --silent -X POST "$LOKI_URL" \
+            -H "Content-Type: application/json" \
+            -u "$LOKI_USER:$LOKI_TOKEN" \
+            -d "{\"streams\":[{\"stream\":{\"job\":\"$(OBS_JOB_NAME)\",\"project\":\"$PROJECT\",\"branch\":\"$BRANCH\",\"status\":\"failure\"},\"values\":[[\"$LOKI_TIMESTAMP\",\"Pipeline falhou | Build=$(Build.BuildId)\"]]}]}" \
+            && echo "📋 Loki: alerta" || echo "⚠️ Loki: falha"
+        fi
+
+        if [ -n "$PROMETHEUS_URL" ]; then
+          printf 'tinas_career_pipeline_success{branch="%s",project="%s"} 0\n' "$BRANCH" "$PROJECT" \
+            | curl --silent --data-binary @- "$PROMETHEUS_URL/metrics/job/$(OBS_JOB_NAME)/instance/$PROJECT" \
+            && echo "📊 Prometheus: alerta" || echo "⚠️ Prometheus: falha"
+        fi
+
+      condition: failed()
+      displayName: '🚨 Observabilidade — Falha'
+      env:
+        DATADOG_API_KEY: $(DATADOG_API_KEY)
+        LOKI_URL: $(LOKI_URL)
+        LOKI_USER: $(LOKI_USER)
+        LOKI_TOKEN: $(LOKI_TOKEN)
+        PROMETHEUS_URL: $(PROMETHEUS_URL)
+
+    - script: |
+        DURATION=$(( $(date +%s) - $(PIPELINE_START_TIME) ))
+        echo ""
+        echo "╔══════════════════════════════════════════════════════════════════╗"
+        echo "║            🚀 PIPELINE EXECUTADO COM SUCESSO                     ║"
+        echo "╠══════════════════════════════════════════════════════════════════╣"
+        echo "║ 📊 Branch:   $(Build.SourceBranchName)"
+        echo "║ ⏱️  Duração:  ${DURATION}s"
+        echo "║ 📦 Build ID: $(Build.BuildId)"
+        echo "╚══════════════════════════════════════════════════════════════════╝"
+      condition: succeeded()
+      displayName: '📝 Resumo — SUCESSO'
+
+    - script: |
+        echo ""
+        echo "╔══════════════════════════════════════════════════════════════════╗"
+        echo "║                 ❌ PIPELINE FALHOU                                ║"
+        echo "╠══════════════════════════════════════════════════════════════════╣"
+        echo "║ 📊 Branch:   $(Build.SourceBranchName)"
+        echo "║ 📦 Build ID: $(Build.BuildId)"
+        echo "║ 💡 Verifique os logs acima                                        ║"
+        echo "╚══════════════════════════════════════════════════════════════════╝"
+      condition: failed()
+      displayName: '📝 Resumo — FALHA'

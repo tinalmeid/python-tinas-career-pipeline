@@ -1,0 +1,115 @@
+name: CI — python_tinas_career_pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+    # 🔥 Ignora PRs que só mudam documentação/configuração
+    paths-ignore:
+      - '**.md'           # Ignora mudanças em documentação
+      - 'docs/**'         # Ignora pasta docs
+      - '.github/**'      # Ignora workflows
+      - 'README.md'
+      - 'CONTRIBUTING.md'
+      - 'LICENSE'
+      - 'CHANGELOG.md'
+
+jobs:
+  test:
+    name: ⚗️ Testes e Qualidade de Código
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      # 1. Baixar o código-fonte do repositório
+      - name: 🔍 Checkout do código
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # 2. Configurar Python 3.12 com cache de dependências
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      # 3. Instalar dependências de todos os serviços
+      - name: 📦 Instalar Dependências
+        run: |
+          set -e
+          pip install --upgrade pip
+
+          # Loop pelos microsserviços
+          for svc in svc-usuarios svc-orcamento svc-previsao svc-notificacoes; do
+            if [ -f "$svc/requirements.txt" ]; then
+              echo "→ Instalando $svc/requirements.txt"
+              pip install -r $svc/requirements.txt
+            fi
+          done
+
+          # Dependências de teste
+          pip install pytest pytest-asyncio pytest-cov httpx
+
+      # 4. Rodar testes (ou criar arquivo vazio para setup)
+      - name: 🧪 Rodar testes ou preparar para setup
+        id: tests
+        run: |
+          set -e
+
+          # Verifica se existem arquivos de teste
+          if find . -name "test_*.py" -o -name "*_test.py" | grep -q .; then
+            echo "✅ Testes encontrados! Executando pytest..."
+            pytest --cov=. --cov-report=xml --cov-report=term
+            echo "tests_encontrados=true" >> $GITHUB_OUTPUT
+          else
+            echo "⚠️ Nenhum teste encontrado - PR de configuração/setup"
+            echo "🏷️ Task ENG-665 deve adicionar testes posteriormente"
+
+            # Cria um coverage.xml mínimo e válido
+            printf '<?xml version="1.0" ?>\n<coverage version="7.4"/>\n' > coverage.xml
+
+            echo "✅ coverage.xml criado (mínimo) para compatibilidade"
+            echo "tests_encontrados=false" >> $GITHUB_OUTPUT
+          fi
+
+      # 5. Upload do relatório de cobertura (opcional, para debug)
+      - name: 📤 Upload do coverage.xml
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report
+          path: coverage.xml
+          retention-days: 7
+
+      # 6. Análise com SonarCloud
+      - name: 📡 SonarCloud Scan
+        uses: SonarSource/sonarcloud-github-action@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          args: >
+            -Dsonar.python.version=3.12
+            -Dsonar.coverageReportPaths=coverage.xml
+        # Sempre roda, mesmo sem testes (coverage.xml vazio evita erro)
+
+      # 7. Resumo do status
+            # 7. Resumo do status
+      - name: 📝 Resumo da execução
+        if: always()
+        run: |
+          echo "=========================================="
+          echo "🚀 CI - python_tinas_career_pipeline"
+          echo "=========================================="
+          echo "🧪 Testes encontrados: ${{ steps.tests.outputs.tests_encontrados }}"
+          echo "=========================================="
+
+          if [ "${{ steps.tests.outputs.tests_encontrados }}" == "false" ]; then
+            echo "💡 Dica: Este é um PR de configuração/setup."
+            echo "📌 A partir da Task ENG-665 deve implementar os testes."
+          else
+            echo "✅ Todos os testes passaram!"
+          fi
+          echo "=========================================="
