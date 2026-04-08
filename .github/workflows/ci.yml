@@ -1,3 +1,14 @@
+# @file ci.yml
+# @description Workflow de Integração Contínua (CI) para o projeto python_tinas_career_pipeline.
+# Este workflow é acionado em pushes e pull requests para a branch main, garantindo que o código seja testado e analisado com SonarCloud antes de ser mesclado.
+# Ele inclui etapas para configurar o ambiente Python, instalar dependências, rodar testes (se existirem) e gerar relatórios de cobertura,
+# além de um resumo detalhado do status da execução.
+#
+# @author Tina de Almeida
+# @date Abril de 2026
+# @version 1.0.0
+
+
 name: CI — python_tinas_career_pipeline
 
 on:
@@ -113,3 +124,5 @@ jobs:
             echo "✅ Todos os testes passaram!"
           fi
           echo "=========================================="
+
+# @file Fim do arquivo ci.yml
