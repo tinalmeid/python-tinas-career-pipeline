@@ -1,0 +1,29 @@
+# @file docker/prometheus/prometheus.yml
+# @description Configuração do Prometheus para monitoramento dos microsserviços do projeto python_tinas_career_pipeline.
+# Este arquivo define as regras de scrape para coletar métricas dos serviços em execução,
+# permitindo uma análise detalhada do desempenho e saúde do sistema.
+#
+# @author Tina de Almeida
+# @date Abril 2026
+# @version 1.0.0
+
+# Configuração global do Prometheus
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Job para coletar métricas das aplicações Python
+  - job_name: 'python_applications'
+    static_configs:
+      - targets: []
+    metrics_path: '/metrics'
+    # Configuração dinâmica para quando as aplicações estiverem rodando
+    # Os serviços devem expor métricas no endpoint /metrics
+
+
+# @file Fim do arquivo prometheus.yml

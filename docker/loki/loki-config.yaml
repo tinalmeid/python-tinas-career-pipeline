@@ -1,0 +1,44 @@
+# @file docker/loki/loki-config.yaml
+# @description Configuração do Loki para coleta e armazenamento de logs dos microsserviços do projeto python_tinas_career_pipeline.
+# Este arquivo define as configurações para o funcionamento do Loki.
+#
+# @author Tina de Almeida
+# @date Abril 2026
+# @version 1.0.0
+
+# Configuração global do Loki
+auth_enabled: false
+
+server:
+  http_listen_port: 3100
+
+common:
+  ring:
+    instance_addr: 127.0.0.1
+    kvstore:
+      store: inmemory
+  replication_factor: 1
+  path_prefix: /loki
+
+schema_config:
+  configs:
+    - from: 2020-10-24
+      store: tsdb
+      object_store: filesystem
+      schema: v13
+      index:
+        prefix: index_
+        period: 24h
+
+storage_config:
+  filesystem:
+    directory: /loki/chunks
+
+limits_config:
+  allow_structured_metadata: true
+  ingestion_rate_mb: 10
+  ingestion_burst_size_mb: 20
+
+table_manager:
+  retention_deletes_enabled: true
+  retention_period: 168h  # 7 dias

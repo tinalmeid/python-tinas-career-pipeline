@@ -1,0 +1,19 @@
+# @file docker/grafana/provisioning/dashboards/dashboards.yml
+# @description Configuração dos dashboards para o Grafana no projeto python_tinas_career_pipeline
+#
+# @author Tina de Almeida
+# @date Abril 2026
+# @version 1.0.0
+
+# Configuração das fontes de dados para o Grafana
+apiVersion: 1
+
+providers:
+  - name: 'Default'
+    orgId: 1
+    folder: ''
+    type: file
+    disableDeletion: false
+    editable: true
+    options:
+      path: /etc/grafana/provisioning/dashboards
