@@ -135,13 +135,14 @@ jobs:
                 ]}" && echo "📡 Datadog: enviado" || echo "⚠️ Datadog: falha"
         fi
 
-        # 2. LOKI
+        # 2. LOKI (Simplificado para aprendizado)
         if [ -n "$L_URL" ]; then
-          curl --silent --fail-with-body -X POST "$L_URL" -u "$L_USER:$L_TOKEN" \
-            -H "Content-Type: application/json" \
-            -d "{ \"streams\": [{ \"stream\": { \"job\": \"$J_NAME\", \"branch\": \"$B_NAME\" }, \"values\": [[ \"$LOKI_TS\", \"[SUCCESS] Pipeline finalizado em ${DURATION}s\" ]] }]}" \
-            && echo "📋 Loki: enviado" || echo "⚠️ Loki: falha"
+         curl -v -X POST "$L_URL" -u "$L_USER:$L_TOKEN" \
+           -H "Content-Type: application/json" \
+           -d "{ \"streams\": [{ \"stream\": { \"job\": \"$J_NAME\" }, \"values\": [[ \"$(date +%s)000000000\", \"[SUCCESS] Pipeline finalizado na branch $B_NAME\" ]] }]}" \
+           && echo "📋 Loki: enviado" || echo "⚠️ Loki: falha"
         fi
+
 
         # 3. PROMETHEUS (PUSHGATEWAY / REMOTE WRITE)
         if [ -n "$P_URL" ]; then
