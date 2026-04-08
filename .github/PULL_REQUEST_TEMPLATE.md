@@ -45,3 +45,17 @@
 **🖼️ Prints / Logs:**
 
 > *Adicione aqui o print do terminal mostrando os testes passando, o link do SonarCloud ou a evidência visual da pipeline de CI/CD.*
+> Recortar e colar no comentário do PR, antes de realizar o Squash Merge, confirmando todos os itens'
+
+**Checklist obrigatório:**
+
+Confirmação de execução local:
+
+- [ ] `pytest` passa localmente com `--cov-fail-under=80`
+- [ ] SonarCloud Quality Gate verde (sem new code smells)
+- [ ] Docstrings em todas as funções novas ou alteradas
+- [ ] SOLID aplicado (especialmente SRP — funções com uma responsabilidade)
+- [ ] Sem `print()` de debug, sem imports não usados
+- [ ] Nenhuma credencial ou secret no código
+- [ ] `requirements.txt` atualizado (se instalou nova lib)
+- [ ] `README.md` atualizado (se adicionou nova feature ou endpoint)

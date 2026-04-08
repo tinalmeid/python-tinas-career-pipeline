@@ -1,0 +1,35 @@
+# @file docker/promtail/promtail-config.yaml
+# @description Configuração do Promtail para coleta de logs dos microsserviços do projeto python_tinas_career_pipeline.
+# Este arquivo define as configurações para o funcionamento do Promtail.
+#
+# @author Tina de Almeida
+# @date Abril 2026
+# @version 1.0.0
+
+# Configuração global do Promtail
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  - job_name: system
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: varlogs
+          __path__: /var/log/*log
+
+  - job_name: docker
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: docker_logs
+          __path__: /var/lib/docker/containers/*/*.log
