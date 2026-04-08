@@ -1,5 +1,10 @@
 # ===================================================================================
-# .gitignore
+# @file .gitignore
+# @description Arquivo de configuração para o Git, listando arquivos e pastas que devem ser ignorados (não versionados)
+#
+# @author Tina de Almeida
+# @date Abril de 2026
+# @version 1.0.0
 # ===================================================================================
 # OBJETIVO: Informar ao Git quais arquivos/pastas NÃO devem ser versionados
 #
@@ -77,3 +82,5 @@ tmp/
 temp/
 *.tmp
 *.temp
+
+# @file Fim do arquivo .gitignore

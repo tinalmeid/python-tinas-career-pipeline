@@ -1,5 +1,10 @@
 # ===================================================================================
-# requirements.txt
+# @file requirements.txt
+# @description Arquivo de dependências para o projeto, incluindo todas as libs necessárias para rodar em produção
+#
+# @author Tina de Almeida
+# @date Abril de 2026
+# @version 1.0.0
 # ===================================================================================
 # OBJETIVO: Dependências OBRIGATÓRIAS para o projeto rodar em PRODUÇÃO
 #
@@ -51,3 +56,5 @@ opentelemetry-instrumentation-fastapi==0.49b2  # Monitora FastAPI
 # -----------------------------------------------------------------------------------
 python-dateutil==2.9.0     # Manipulação de datas (mais flexível que datetime)
 tenacity==9.0.0            # Retry automático (re-tenta operações que falham)
+
+# @File Fim do arquivo requirements.txt

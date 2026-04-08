@@ -1,5 +1,10 @@
 # ===================================================================================
 # requirements-dev.txt
+# @description Arquivo de dependências para desenvolvimento e testes, incluindo tudo do requirements.txt + ferramentas extras
+#
+# @author Tina de Almeida
+# @date Abril de 2026
+# @version 1.0.0
 # ===================================================================================
 # OBJETIVO: Ferramentas usadas SOMENTE durante o DESENVOLVIMENTO e TESTES
 #
@@ -55,3 +60,5 @@ faker==33.3.0               # Gera dados falsos (CPF, email, nome, etc.)
 # Coverage (Relatórios de cobertura)
 # -----------------------------------------------------------------------------------
 coverage==7.6.9             # Mede quais linhas de código foram executadas nos testes
+
+# @file Fim do arquivo requirements-dev.txt

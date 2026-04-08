@@ -290,3 +290,5 @@ jobs:
         echo "╚══════════════════════════════════════════════════════════════════╝"
       condition: failed()
       displayName: '📝 Resumo — FALHA'
+
+# @file Fim do arquivo azure-pipelines.yaml
