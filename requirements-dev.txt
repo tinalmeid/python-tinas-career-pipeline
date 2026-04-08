@@ -29,6 +29,7 @@ pytest==8.3.4               # Framework de testes (runner)
 pytest-asyncio==0.24.0      # Suporte a testes assíncronos (async/await)
 pytest-cov==6.0.0           # Mede cobertura de código (% testado)
 pytest-mock==3.14.0         # Mocking (simula comportamentos)
+python-snappy==0.7.3        # Compressão para relatórios de cobertura (opcional)
 
 # -----------------------------------------------------------------------------------
 # Code Quality (Qualidade de código)
