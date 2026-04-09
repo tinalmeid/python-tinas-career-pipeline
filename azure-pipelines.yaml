@@ -1,4 +1,3 @@
-
 # yaml-language-server: $schema=https://json.schemastore.org/azure-pipelines
 # azure-pipelines.yml
 # ===================================================================================
@@ -587,5 +586,7 @@ jobs:
         LOKI_ENDPOINT: $(LOKI_URL)
         PUSHGATEWAY_ENDPOINT: $(PUSHGATEWAY_URL)
         JOB_NAME: $(OBS_JOB_NAME)
+# @file Fim do arquivo azure-pipelines.yaml
+
 
 # @file Fim do arquivo azure-pipelines.yaml
