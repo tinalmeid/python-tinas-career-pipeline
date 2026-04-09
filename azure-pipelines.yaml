@@ -84,14 +84,23 @@ jobs:
     # -------------------------------------------------------------------------------
     # SONARCLOUD: Configurado com exclusões para garantir o Quality Gate
     # -------------------------------------------------------------------------------
+    - script: |
+        echo "🔧 Arquitetura: Injetando chaves no sonar-project.properties..."
+        # Substitui o texto literal pela variável de ambiente do Azure
+        sed -i "s/\$(SONAR_PROJECT_KEY)/$(SONAR_PROJECT_KEY)/g" sonar-project.properties
+
+        echo "✅ Conteúdo atualizado do arquivo:"
+        cat sonar-project.properties
+      displayName: '🔧 Passo 5.5: Preparar Arquivo de Propriedades'
+
     - task: SonarCloudPrepare@4
       inputs:
         SonarCloud: 'SonarCloud-Service-Connection'
         organization: 'tinalmeid'
         scannerMode: 'CLI'
         configMode: 'manual'
-        cliProjectKey: '$(SONAR_PROJECT_KEY)'
-        cliProjectName: 'python-tinas-career-pipeline'
+        cliProjectKey: $(SONAR_PROJECT_KEY)
+        cliProjectName: 'tinalmeid-tinas-career-pipeline'
         cliSources: '.'
         extraProperties: |
           sonar.python.version=3.12
