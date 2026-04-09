@@ -92,6 +92,8 @@ jobs:
         echo "✅ Conteúdo atualizado do arquivo:"
         cat sonar-project.properties
       displayName: '🔧 Passo 5.5: Preparar Arquivo de Propriedades'
+      env:
+        SONAR_PROJECT_KEY: $(SONAR_PROJECT_KEY)
 
     - task: SonarCloudPrepare@4
       inputs:
