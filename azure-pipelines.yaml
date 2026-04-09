@@ -22,7 +22,7 @@
 
 # --------------------------------------------------------------
 # GATILHO: Executa em pushes e PRs para a branch main
-# -----------------------------------------------------------------------------------
+# --------------------------------------------------------------
 trigger:
   branches:
     include:
@@ -346,17 +346,16 @@ jobs:
           || echo "Loki: falha ao enviar log (nao critico)."
 
         # ------------------------------------------------------------------
-        # 3. GRAFANA CLOUD - PROMETHEUS (metricas)
+        # 3. GRAFANA CLOUD - PROMETHEUS (metricas via InfluxDB line protocol)
         # ------------------------------------------------------------------
-        echo "# HELP cdd_pipeline_success Resultado do pipeline (1=sucesso, 0=falha)
-        # TYPE cdd_pipeline_success gauge
-        cdd_pipeline_success{branch=\"$BRANCH\",project=\"$PROJECT\"} 1
-        # HELP cdd_pipeline_duration_seconds Duracao total do pipeline em segundos
-        # TYPE cdd_pipeline_duration_seconds gauge
-        cdd_pipeline_duration_seconds{branch=\"$BRANCH\",project=\"$PROJECT\"} $DURATION" > /tmp/metrics.txt
+        # Formato: measurement,tag=value field=value timestamp_ns
+        INFLUX_TIMESTAMP="${TIMESTAMP}000000000"
+
+        echo "cdd_pipeline,branch=$BRANCH,project=$PROJECT success=1,duration_seconds=$DURATION $INFLUX_TIMESTAMP" > /tmp/metrics.txt
 
         curl --silent --fail-with-body \
-          -X POST "$PROMETHEUS_ENDPOINT" \
+          -X POST "${PROMETHEUS_ENDPOINT/\/api\/prom\/push/\/api/v1/push/influx/write}" \
+          -H "Content-Type: text/plain" \
           -u "$PROMETHEUS_USER:$PROMETHEUS_TOKEN" \
           --data-binary @/tmp/metrics.txt \
           && echo "Prometheus (Grafana Cloud): metricas enviadas." \
@@ -430,13 +429,13 @@ jobs:
           && echo "Loki: log de falha enviado." \
           || echo "Loki: falha ao enviar log."
 
-        # Prometheus (Grafana Cloud)
-        echo "# HELP cdd_pipeline_success Resultado do pipeline
-        # TYPE cdd_pipeline_success gauge
-        cdd_pipeline_success{branch=\"$BRANCH\",project=\"$PROJECT\"} 0" > /tmp/metrics.txt
+        # Prometheus (Grafana Cloud via InfluxDB line protocol)
+        INFLUX_TIMESTAMP="${TIMESTAMP}000000000"
+        echo "cdd_pipeline,branch=$BRANCH,project=$PROJECT success=0 $INFLUX_TIMESTAMP" > /tmp/metrics.txt
 
         curl --silent \
-          -X POST "$PROMETHEUS_ENDPOINT" \
+          -X POST "${PROMETHEUS_ENDPOINT/\/api\/prom\/push/\/api/v1/push/influx/write}" \
+          -H "Content-Type: text/plain" \
           -u "$PROMETHEUS_USER:$PROMETHEUS_TOKEN" \
           --data-binary @/tmp/metrics.txt \
           && echo "Prometheus: metrica de falha enviada." \
