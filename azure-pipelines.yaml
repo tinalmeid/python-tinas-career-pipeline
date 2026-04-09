@@ -11,7 +11,7 @@
 #
 # AUTOR          : Cristina de Almeida
 # DATA           : Abril de 2026
-# VERSION        : 1.0.2
+# VERSION        : 1.0.5
 # ===================================================================================
 # É necessário configurar a pipeline no Azure DevOps:
 # 1. Vá em Pipelines -> New Pipeline.
@@ -104,7 +104,7 @@ variables:
 
 jobs:
 - job: SmartBuild
-  displayName: 'Build and Quality - Deteccao Automatica'
+  displayName: '🤖 Build and Quality - Deteccao Automatica'
 
   steps:
 
@@ -113,7 +113,7 @@ jobs:
     # ===============================================================================
     - checkout: self
       fetchDepth: 0
-      displayName: 'Checkout do Codigo (historico completo)'
+      displayName: '📥 Checkout do Codigo (historico completo)'
 
     # ===============================================================================
     # PASSO 0b - CAPTURAR TIMESTAMP DE INICIO
@@ -121,7 +121,7 @@ jobs:
     - script: |
         echo "##vso[task.setvariable variable=PIPELINE_START_TIME]$(date +%s)"
         echo "Timestamp de inicio registrado: $(date +%s)"
-      displayName: 'Registrar Inicio do Pipeline'
+      displayName: '⏱️ Registrar Inicio do Pipeline'
 
     # ===============================================================================
     # PASSO 1 - DETECCAO DA LINGUAGEM
@@ -158,7 +158,7 @@ jobs:
           echo "##[error] Esperado: requirements.txt | pyproject.toml | package.json | *.csproj"
           exit 1
         fi
-      displayName: 'Identificando Tecnologia do Repositorio'
+      displayName: '🧐 Identificando Tecnologia do Repositorio'
 
     # ===============================================================================
     # PASSO 2 - SETUP DE RUNTIME
@@ -167,20 +167,20 @@ jobs:
       condition: eq(variables['isPython'], 'true')
       inputs:
         versionSpec: $(PYTHON_VERSION)
-      displayName: 'Configurar Python $(PYTHON_VERSION)'
+      displayName: '🐍 Configurar Python $(PYTHON_VERSION)'
 
     - task: UseDotNet@2
       condition: eq(variables['isCSharp'], 'true')
       inputs:
         packageType: 'sdk'
         version: '8.x'
-      displayName: 'Configurar .NET SDK 8.x'
+      displayName: '⚙️ Configurar .NET SDK 8.x'
 
     - task: UseNode@1
       condition: eq(variables['isJS'], 'true')
       inputs:
         version: $(NODE_VERSION)
-      displayName: 'Configurar Node.js $(NODE_VERSION)'
+      displayName: '🌐 Configurar Node.js $(NODE_VERSION)'
 
     # ===============================================================================
     # PASSO 3 - PREPARAR ANALISE SONARCLOUD
@@ -199,7 +199,7 @@ jobs:
           sonar.javascript.lcov.reportPaths=$(System.DefaultWorkingDirectory)/coverage/lcov.info
           sonar.sources=.
           sonar.exclusions=**/venv/**,**/__pycache__/**,**/.pytest_cache/**
-      displayName: 'Preparar SonarCloud (Python / JS)'
+      displayName: '🏗️ Preparar SonarCloud (Python / JS)'
 
     # ===============================================================================
     # PASSO 4 - INSTALAR DEPENDENCIAS + RODAR TESTES
@@ -211,7 +211,7 @@ jobs:
         pip install -r requirements.txt
         pip install pytest pytest-cov
       condition: eq(variables['isPython'], 'true')
-      displayName: 'Instalar dependencias Python'
+      displayName: '🐍 Instalar dependencias Python'
 
     # --- 4b. Python: Rodar testes (COM VERIFICACAO SE EXISTEM) ---
     - script: |
@@ -234,7 +234,7 @@ jobs:
           echo "coverage.xml vazio criado para SonarCloud"
         fi
       condition: eq(variables['isPython'], 'true')
-      displayName: 'Testes Python + Cobertura'
+      displayName: '🧪 Testes Python + Cobertura'
 
     # --- 4c. Python: Corrigir caminhos no coverage.xml ---
     - script: |
@@ -250,18 +250,18 @@ jobs:
           head -20 coverage.xml
         fi
       condition: eq(variables['isPython'], 'true')
-      displayName: 'Corrigir Caminhos no coverage.xml'
+      displayName: '🚑 Corrigir Caminhos no coverage.xml'
 
     # ===============================================================================
     # PASSO 5 - EXECUTAR E PUBLICAR ANALISE SONARCLOUD
     # ===============================================================================
     - task: SonarCloudAnalyze@4
-      displayName: 'Executar Scan SonarCloud'
+      displayName: '🚀 Executar Scan SonarCloud'
 
     - task: SonarCloudPublish@4
       inputs:
         pollingTimeoutSec: '300'
-      displayName: 'Publicar Metricas no Dashboard'
+      displayName: '📊 Publicar Metricas no Dashboard'
 
     # ===============================================================================
     # PASSO 6 - PUBLICAR RESULTADOS DE TESTES NO AZURE
@@ -272,11 +272,10 @@ jobs:
         testResultsFormat: 'JUnit'
         testResultsFiles: '**/test-results*.xml'
         failTaskOnFailedTests: true
-      displayName: 'Publicar Resultados de Testes'
+      displayName: '📋 Publicar Resultados de Testes'
 
-    # ===============================================================================
-    # PASSO 7 - OBSERVABILIDADE (Datadog + Grafana Cloud)
-    # ===============================================================================
+
+
 
     # --- 7a. Observabilidade: SUCESSO ---
     - script: |
@@ -307,12 +306,12 @@ jobs:
               {
                 \"metric\": \"cdd.pipeline.success\",
                 \"points\": [[$TIMESTAMP, 1]],
-                \"tags\": [\"project:$PROJECT\", \"branch:$BRANCH\", \"language:$LANG_TAG\"]
+                \"tags\": [\"project:$PROJECT_SAFE\", \"repo:$REPO_SAFE\", \"branch:$BRANCH_SAFE\", \"language:$LANG_TAG\"]
               },
               {
                 \"metric\": \"cdd.pipeline.duration_seconds\",
                 \"points\": [[$TIMESTAMP, $DURATION]],
-                \"tags\": [\"project:$PROJECT\", \"branch:$BRANCH\", \"language:$LANG_TAG\"]
+                \"tags\": [\"project:$PROJECT_SAFE\", \"repo:$REPO_SAFE\", \"branch:$BRANCH_SAFE\", \"language:$LANG_TAG\"]
               }
             ]
           }" \
@@ -332,8 +331,9 @@ jobs:
             \"streams\": [{
               \"stream\": {
                 \"job\":     \"$JOB_NAME\",
-                \"project\": \"$PROJECT\",
-                \"branch\":  \"$BRANCH\",
+                \"project\": \"$PROJECT_SAFE\",
+                \"repo\":    \"$REPO_SAFE\",
+                \"branch\":  \"$BRANCH_SAFE\",
                 \"status\":  \"success\"
               },
               \"values\": [[
@@ -356,6 +356,7 @@ jobs:
         # Escapa espacos nas tags (substitui por underscore)
         BRANCH_SAFE=$(echo "$BRANCH" | tr ' ' '_')
         PROJECT_SAFE=$(echo "$PROJECT" | tr ' ' '_')
+        REPO_SAFE=$(echo "$REPO" | tr ' ' '_')
 
         # Formato InfluxDB line protocol: measurement,tag=value field=value timestamp_ns
         INFLUX_TIMESTAMP="${TIMESTAMP}000000000"
@@ -378,7 +379,7 @@ jobs:
         fi
 
       condition: succeeded()
-      displayName: 'Observabilidade - Sucesso'
+      displayName: '📡 Observabilidade - Sucesso (Datadog +  Loki + Prometheus)'
       env:
         DD_API_KEY: $(DATADOG_API_KEY)
         BRANCH: $(Build.SourceBranchName)
@@ -417,7 +418,7 @@ jobs:
             \"series\": [{
               \"metric\": \"cdd.pipeline.failure\",
               \"points\": [[$TIMESTAMP, 1]],
-              \"tags\": [\"project:$PROJECT\", \"branch:$BRANCH\"]
+              \"tags\": [\"project:$PROJECT_SAFE\", \"branch:$BRANCH_SAFE\", \"repo:$REPO_SAFE\"]
             }]
           }" \
           && echo "Datadog: alerta de falha enviado." \
@@ -453,7 +454,7 @@ jobs:
         PROJECT_SAFE=$(echo "$PROJECT" | tr ' ' '_')
 
         INFLUX_TIMESTAMP="${TIMESTAMP}000000000"
-        echo "cdd_pipeline,branch=${BRANCH_SAFE},project=${PROJECT_SAFE} success=0 $INFLUX_TIMESTAMP" > /tmp/metrics.txt
+        echo "cdd_pipeline,branch=${BRANCH_SAFE},project=${PROJECT_SAFE},repo=${REPO_SAFE}, success=0 $INFLUX_TIMESTAMP" > /tmp/metrics.txt
 
         RESPONSE=$(curl --silent --write-out "HTTP_CODE:%{http_code}" \
           -X POST "$INFLUX_URL" \
@@ -471,12 +472,13 @@ jobs:
         fi
 
       condition: failed()
-      displayName: 'Observabilidade - Falha'
+      displayName: '🚨 Observabilidade - Falha'
       env:
         DD_API_KEY: $(DATADOG_API_KEY)
         BRANCH: $(Build.SourceBranchName)
         PROJECT: $(System.TeamProject)
         BUILD_ID: $(Build.BuildId)
+        REPO: $(Build.Repository.Name)
         COMMIT: $(Build.SourceVersion)
         DATADOG_URL: $(DATADOG_API_URL)
         LOKI_ENDPOINT: $(LOKI_URL)
@@ -486,3 +488,45 @@ jobs:
         PROMETHEUS_USER: $(PROMETHEUS_USER)
         PROMETHEUS_TOKEN: $(PROMETHEUS_TOKEN)
         JOB_NAME: $(OBS_JOB_NAME)
+
+    # ===============================================================================
+    # PASSO 8 - RESUMO E CONCLUSÕES
+    # ===============================================================================
+    - script: |
+        END_TIME=$(date +%s)
+        DURATION=$((END_TIME - START_TIME))
+
+        echo "=========================================="
+        echo "🚀 CI - python-tinas-career-pipeline"
+        echo "=========================================="
+        echo "✅ Pipeline concluído em ${DURATION}s"
+        echo "📊 Branch: $BRANCH"
+        echo "📦 Build ID: $(Build.BuildId)"
+        echo "🔗 Commit: $(Build.SourceVersion)"
+
+        if [ "$testsFound" = 'true' ]; then
+          echo "Testes foram executados e resultados publicados."
+        else
+          echo "Nenhum teste encontrado - Pipeline de configuracao/setup."
+          echo "Adicione testes posteriormente para obter metricas de cobertura e qualidade."
+
+        echo "=========================================="
+      condition: succeeded()
+      displayName: '📝 Resumo da Execução'
+
+    # ===============================================================================
+    # PASSO 9 - NOTIFICAÇÃO DE FALHA
+    # ===============================================================================
+    - script: |
+        echo "=========================================="
+        echo "❌ PIPELINE FALHOU"
+        echo "=========================================="
+        echo "📊 Branch: $(Build.SourceBranchName)"
+        echo "📦 Build ID: $(Build.BuildId)"
+        echo "🔗 Commit: $(Build.SourceVersion)"
+        echo "=========================================="
+        echo "💡 Verifique os logs acima para mais detalhes"
+      condition: failed()
+      displayName: '🚨 Notificação de Falha'
+
+# @file Fim o arquivo azure-pipelines.yaml

@@ -8,5 +8,8 @@
     "[yaml]": {
         "editor.defaultFormatter": "redhat.vscode-yaml"
     },
-    "yaml.schemas": {}
+    "yaml.schemas": {},
+    "cSpell.words": [
+        "espacos"
+    ]
 }
