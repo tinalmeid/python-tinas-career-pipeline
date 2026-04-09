@@ -1,5 +1,6 @@
+
+# yaml-language-server: $schema=https://json.schemastore.org/azure-pipelines
 # azure-pipelines.yml
-# yaml-language-server: $schema=off
 # ===================================================================================
 # OBJETIVO       : Pipeline de CI para o python-tinas-career-pipeline
 #                  Detecta Python via requirements.txt, roda testes com cobertura
@@ -11,7 +12,7 @@
 #
 # AUTOR          : Cristina de Almeida
 # DATA           : Abril de 2026
-# VERSION        : 1.0.0
+# VERSION        : 1.0.1
 # ===================================================================================
 # É necessário configurar a pipeline no Azure DevOps:
 # 1. Vá em Pipelines -> New Pipeline.
@@ -234,7 +235,9 @@ jobs:
     # scannerMode 'CLI' é o modo correto para Python e JavaScript.
     # Para .NET (MSBuild), o Sonar envolve o build diretamente — veja Passo 4c.
     # ===============================================================================
-    - task: SonarCloudPrepare@1
+    # CORREÇÃO: Atualizado de SonarCloudPrepare@1 para SonarCloudPrepare@3
+    # ===============================================================================
+    - task: SonarCloudPrepare@3
       condition: or(eq(variables['isPython'], 'true'), eq(variables['isJS'], 'true'))
       inputs:
         SonarCloud:  $(SONAR_SERVICE_CONNECTION)
@@ -320,11 +323,15 @@ jobs:
     # ===============================================================================
     # PASSO 5 — EXECUTAR E PUBLICAR ANÁLISE SONARCLOUD
     # ===============================================================================
-
-    - task: SonarCloudAnalyze@1
+    # CORREÇÃO: Atualizado de SonarCloudAnalyze@1 para SonarCloudAnalyze@3
+    # ===============================================================================
+    - task: SonarCloudAnalyze@3
       displayName: '🚀 Executar Scan SonarCloud'
 
-    - task: SonarCloudPublish@1
+    # ===============================================================================
+    # CORREÇÃO: Atualizado de SonarCloudPublish@1 para SonarCloudPublish@3
+    # ===============================================================================
+    - task: SonarCloudPublish@3
       inputs:
         pollingTimeoutSec: '300'
       displayName: '📊 Publicar Métricas no Dashboard'

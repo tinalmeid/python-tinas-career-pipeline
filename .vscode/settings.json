@@ -2,5 +2,9 @@
     "sonarlint.connectedMode.project": {
         "connectionId": "tinalmeid",
         "projectKey": "tinalmeid_python_tinas_carrer_pipeline"
-    }
+    },
+    "yaml.schemas": {
+        "https://raw.githubusercontent.com/microsoft/azure-pipelines-vscode/master/service-schema.json": []
+    },
+    "azure-pipelines.customSchemaFile": ""
 }
