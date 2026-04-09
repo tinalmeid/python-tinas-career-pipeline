@@ -356,14 +356,22 @@ jobs:
         # Formato InfluxDB line protocol: measurement,tag=value field=value timestamp_ns
         INFLUX_TIMESTAMP="${TIMESTAMP}000000000"
         echo "cdd_pipeline,branch=$BRANCH,project=$PROJECT success=1,duration_seconds=$DURATION $INFLUX_TIMESTAMP" > /tmp/metrics.txt
+        echo "Payload: $(cat /tmp/metrics.txt)"
 
-        curl --silent --fail-with-body \
+        RESPONSE=$(curl --silent --write-out "HTTP_CODE:%{http_code}" \
           -X POST "$INFLUX_URL" \
           -H "Content-Type: text/plain" \
           -u "$PROMETHEUS_USER:$PROMETHEUS_TOKEN" \
-          --data-binary @/tmp/metrics.txt \
-          && echo "Prometheus/InfluxDB (Grafana Cloud): metricas enviadas." \
-          || echo "Prometheus: falha ao enviar metricas (nao critico)."
+          --data-binary @/tmp/metrics.txt 2>&1)
+
+        HTTP_CODE=$(echo "$RESPONSE" | grep -o "HTTP_CODE:[0-9]*" | cut -d: -f2)
+        BODY=$(echo "$RESPONSE" | sed 's/HTTP_CODE:[0-9]*$//')
+
+        if [ "$HTTP_CODE" = "204" ] || [ "$HTTP_CODE" = "200" ]; then
+          echo "Prometheus/InfluxDB (Grafana Cloud): metricas enviadas. HTTP $HTTP_CODE"
+        else
+          echo "Prometheus: falha HTTP $HTTP_CODE - $BODY"
+        fi
 
       condition: succeeded()
       displayName: 'Observabilidade - Sucesso'
@@ -438,13 +446,20 @@ jobs:
         INFLUX_TIMESTAMP="${TIMESTAMP}000000000"
         echo "cdd_pipeline,branch=$BRANCH,project=$PROJECT success=0 $INFLUX_TIMESTAMP" > /tmp/metrics.txt
 
-        curl --silent \
+        RESPONSE=$(curl --silent --write-out "HTTP_CODE:%{http_code}" \
           -X POST "$INFLUX_URL" \
           -H "Content-Type: text/plain" \
           -u "$PROMETHEUS_USER:$PROMETHEUS_TOKEN" \
-          --data-binary @/tmp/metrics.txt \
-          && echo "Prometheus: metrica de falha enviada." \
-          || echo "Prometheus: falha ao enviar metrica."
+          --data-binary @/tmp/metrics.txt 2>&1)
+
+        HTTP_CODE=$(echo "$RESPONSE" | grep -o "HTTP_CODE:[0-9]*" | cut -d: -f2)
+
+        if [ "$HTTP_CODE" = "204" ] || [ "$HTTP_CODE" = "200" ]; then
+          echo "Prometheus: metrica de falha enviada. HTTP $HTTP_CODE"
+        else
+          BODY=$(echo "$RESPONSE" | sed 's/HTTP_CODE:[0-9]*$//')
+          echo "Prometheus: falha HTTP $HTTP_CODE - $BODY"
+        fi
 
       condition: failed()
       displayName: 'Observabilidade - Falha'
