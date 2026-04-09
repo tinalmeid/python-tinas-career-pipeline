@@ -33,140 +33,527 @@ pr:
     include:
       - main
 
-# CORREÇÃO: vmImage (camelCase) é obrigatório para o Azure localizar o agente
+# -----------------------------------------------------------------------------------
+# AGENTE: Ubuntu gratuito (Azure Free Tier)
+# -----------------------------------------------------------------------------------
 pool:
   vmImage: 'ubuntu-latest'
 
+# ===================================================================================
+# VARIÁVEIS GLOBAIS
+# Centraliza valores que mudam entre projetos.
+# ===================================================================================
+# `SONAR_PROJECT_KEY` e `SONAR_PROJECT_NAME` são os únicos valores que mudam.
 variables:
+  # =================================================================================
+  # VARIABLE GROUP — segredos gerenciados na Library do Azure DevOps
+  # =================================================================================
+  # Contém: DATADOG_API_KEY (secreta, valor mascarado nos logs)
+  # Caminho: Pipelines > Library > DATADOG_API_KEY > Pipeline permissions
+  # ATENÇÃO: quando se usa `- group`, TODAS as variáveis precisam do formato
+  #          `- name / value` abaixo — não é possível misturar os dois estilos.
+  # =================================================================================
   - group: DATADOG_API_KEY
-  - group: OBSERVABILITY_KEYS
-  - name: SONAR_SERVICE_CONNECTION
-    value: 'SonarCloud-Service-Connection'
-  - name: OBS_JOB_NAME
-    value: 'azure-pipeline-tinas-career'
 
+  # --- SonarCloud ---
+  - name: SONAR_ORGANIZATION
+    value: 'tinalmeid'               # Slug da organização no sonarcloud.io
+
+  - name: SONAR_PROJECT_KEY
+    value: 'tinalmeid_python-tinas-career-pipeline'   # Project Key gerado no SonarCloud
+
+  - name: SONAR_PROJECT_NAME
+    value: 'tinalmeid_python-tinas-career-pipeline'             # Nome de exibição (pode conter espaços)
+
+  - name: SONAR_SERVICE_CONNECTION
+    value: 'SonarCloud-Service-Connection' # Nome exato cadastrado em Project Settings > Service Connections
+
+  # --- Versões de runtime ---
+  - name: PYTHON_VERSION
+    value: '3.10'   # Python 3.10+ — suporte a typing moderno
+
+  - name: NODE_VERSION
+    value: '18'     # Node.js 18 LTS
+
+  - name: DOTNET_VERSION
+    value: '8.x'    # .NET SDK — usado pela task UseDotNet@2
+
+  # (WIP) Versões reservadas para linguagens ainda não implementadas
+  - name: CSHARP_VERSION
+    value: '10.0'   # (WIP) C# 10 — requer .NET 6+
+
+  - name: CPLUSPLUS_VERSION
+    value: '17'     # (WIP) C++17
+
+  - name: KOTLIN_VERSION
+    value: '1.8'    # (WIP) Kotlin 1.8+
+
+  - name: JAVA_VERSION
+    value: '17'     # (WIP) Java 17 LTS
+
+  # --- Flags de linguagem (preenchidas automaticamente no Step 1) ---
+  - name: isPython
+    value: 'false'
+
+  - name: isCSharp
+    value: 'false'
+
+  - name: isCpp
+    value: 'false'
+
+  - name: isKotlin
+    value: 'false'
+
+  - name: isJava
+    value: 'false'
+
+  - name: isJS
+    value: 'false'  # JavaScript / Node.js — detectado via package.json
+
+  # --- Observabilidade ---
+  # DATADOG_API_KEY vem do group acima (secreta)
+  - name: DATADOG_API_URL
+    value: 'https://api.datadoghq.com/api/v1/series'
+
+  - name: LOKI_URL
+    value: 'http://seu-loki:3100'       # Grafana Cloud ou instância própria
+
+  - name: PUSHGATEWAY_URL
+    value: 'http://seu-pushgateway:9091' # Ponte obrigatória — Prometheus é pull-based
+
+  - name: OBS_JOB_NAME
+    value: 'azure-pipeline'              # Label usado em todas as métricas e logs
+
+# ===================================================================================
+# JOB PRINCIPAL
+# ===================================================================================
 jobs:
 - job: SmartBuild
-  displayName: '🤖 Build, Quality & Observability'
+  displayName: '🤖 Build & Quality — Detecção Automática'
 
   steps:
+
+    # ===============================================================================
+    # PASSO 0 — CHECKOUT
+    # ===============================================================================
+    # fetch-depth: 0  →  OBRIGATÓRIO para o SonarCloud calcular "New Code".
+    # Com depth parcial, o Sonar não consegue comparar com o histórico anterior.
+    # ===============================================================================
     - checkout: self
       fetchDepth: 0
-      displayName: '📥 Passo 1: Checkout do Código'
+      displayName: '📥 Checkout do Código (histórico completo)'
 
+    # ===============================================================================
+    # PASSO 0b — CAPTURAR TIMESTAMP DE INÍCIO
+    # ===============================================================================
+    # Salva o epoch Unix no início para calcular a duração total do pipeline.
+    # Usado pelo Passo 7 para enviar a métrica de tempo de build ao Datadog
+    # e ao Pushgateway (Prometheus). Deve ficar logo após o checkout.
+    # ===============================================================================
     - script: |
-        echo "⏱️ Iniciando cronômetro do pipeline..."
         echo "##vso[task.setvariable variable=PIPELINE_START_TIME]$(date +%s)"
-      displayName: '⏱️ Passo 2: Registrar Início'
+        echo "⏱️  Timestamp de início registrado: $(date +%s)"
+      displayName: '⏱️  Registrar Início do Pipeline'
 
-    - task: UsePythonVersion@0
-      inputs:
-        versionSpec: '3.12'
-      displayName: '🐍 Passo 3: Configurar Ambiente Python'
-
+      # =============================================================================
+    # PASSO 1 — DETECÇÃO DA LINGUAGEM
+    # ===============================================================================
+    # Estratégia: verificar a existência dos arquivos de manifesto de cada ecossistema:
+    # - Python: requirements.txt ou pyproject.toml
+    # - C#/.NET: qualquer arquivo com extensão .csproj
+    # - C++: CMakeLists.txt ou Makefile
+    # - Java: pom.xml (Maven) ou build.gradle (Gradle)
+    # - Kotlin: build.gradle.kts (Gradle Kotlin DSL) ou pom.xml (Maven)
+    # - JavaScript/Node.js: package.json
+    # Apenas uma linguagem é ativada por execução.
+    # Caso nenhuma seja detectada, o pipeline falha com mensagem clara.
+    # ===============================================================================
     - script: |
-        pip install --upgrade pip
-        pip install pytest pytest-cov httpx python-snappy
-        if [ -f "requirements.txt" ]; then pip install -r requirements.txt; fi
-      displayName: '📦 Instalar Dependências'
+        echo "🔍 Inspecionando arquivos do repositório..."
 
-    - script: |
-        echo "🧪 Iniciando execução dos testes unitários..."
-        if find . -name "test_*.py" | grep -q .; then
-          pytest --cov=. --cov-report=xml:coverage.xml
-          echo "✅ Testes concluídos com sucesso!"
+        if [ -f "requirements.txt" ] || [ -f "pyproject.toml" ]; then
+          echo "✅ Linguagem detectada: Python"
+          echo "##vso[task.setvariable variable=isPython]true"
+
+        elif ls *.csproj 2>/dev/null | grep -q .; then
+          echo "✅ Linguagem detectada: C# / .NET"
+          echo "##vso[task.setvariable variable=isCSharp]true"
+
+        elif [ -f "CMakeLists.txt" ] || [ -f "Makefile" ]; then
+          echo "✅ Linguagem detectada: C++"
+          echo "##vso[task.setvariable variable=isCpp]true"
+
+        elif [ -f "build.gradle.kts" ]; then
+          echo "✅ Linguagem detectada: Kotlin (Gradle Kotlin DSL)"
+          echo "##vso[task.setvariable variable=isKotlin]true"
+
+        elif [ -f "pom.xml" ] || [ -f "build.gradle" ]; then
+          echo "✅ Linguagem detectada: Java"
+          echo "##vso[task.setvariable variable=isJava]true"
+
+        elif [ -f "package.json" ]; then
+          echo "✅ Linguagem detectada: JavaScript / Node.js"
+          echo "##vso[task.setvariable variable=isJS]true"
+
         else
-          echo "⚠️ Nenhum teste encontrado. Gerando relatório de cobertura vazio para o Sonar."
-          printf '<?xml version="1.0" ?>\n<coverage version="7.4"/>\n' > coverage.xml
+          echo "##[error] ❌ Nenhum manifesto reconhecido encontrado."
+          echo "##[error]    Esperado: requirements.txt | pyproject.toml | package.json | *.csproj"
+          exit 1
         fi
-      displayName: '🧪 Passo 5: Executar Testes & Cobertura'
+      displayName: '🧐 Identificando Tecnologia do Repositório'
 
-    # -------------------------------------------------------------------------------
-    # SONARCLOUD: Configurado com exclusões para garantir o Quality Gate
-    # -------------------------------------------------------------------------------
-    - script: |
-        echo "🔧 Arquitetura: Injetando chaves no sonar-project.properties..."
-        # Substitui o texto literal pela variável de ambiente do Azure
-        sed -i "s/\$(SONAR_PROJECT_KEY)/$(SONAR_PROJECT_KEY)/g" sonar-project.properties
+    # ===============================================================================
+    # PASSO 2 — SETUP DE RUNTIME (condicional por linguagem)
+    # ===============================================================================
 
-        echo "✅ Conteúdo atualizado do arquivo:"
-        cat sonar-project.properties
-      displayName: '🔧 Passo 5.5: Preparar Arquivo de Propriedades'
-      env:
-        SONAR_PROJECT_KEY: $(SONAR_PROJECT_KEY)
-
-    - task: SonarCloudPrepare@4
+    # Python e Node.js são os mais comuns, então ficam primeiro.
+    - task: UsePythonVersion@0
+      condition: eq(variables['isPython'], 'true')
       inputs:
-        SonarCloud: 'SonarCloud-Service-Connection'
-        organization: 'tinalmeid'
+        versionSpec: $(PYTHON_VERSION)
+      displayName: '🐍 Configurar Python $(PYTHON_VERSION)'
+
+    - task: UseDotNet@2
+      condition: eq(variables['isCSharp'], 'true')
+      inputs:
+        packageType: 'sdk'
+        version:     '8.x'
+      displayName: '⚙️  Configurar .NET SDK 8.x'
+
+    - task: NodeTool@0
+      condition: eq(variables['isJS'], 'true')
+      inputs:
+        versionSpec: $(NODE_VERSION)
+      displayName: '📦 Configurar Node.js $(NODE_VERSION)'
+
+    # Java, Kotlin e C++ exigem configuração via script (SDKMAN / apt-get) — (WIP)
+
+    # ===============================================================================
+    # PASSO 3 — PREPARAR ANÁLISE SONARCLOUD
+    # ===============================================================================
+    # scannerMode 'CLI' é o modo correto para Python e JavaScript.
+    # Para .NET (MSBuild), o Sonar envolve o build diretamente — veja Passo 4c.
+    # ===============================================================================
+    - task: SonarCloudPrepare@1
+      condition: or(eq(variables['isPython'], 'true'), eq(variables['isJS'], 'true'))
+      inputs:
+        SonarCloud:  $(SONAR_SERVICE_CONNECTION)
+        organization: $(SONAR_ORGANIZATION)
         scannerMode: 'CLI'
-        configMode: 'manual'
-        cliProjectKey: $(SONAR_PROJECT_KEY)
-        cliProjectName: 'tinalmeid-tinas-career-pipeline'
-        cliSources: '.'
+        configMode:  'manual'
+        cliProjectKey:  $(SONAR_PROJECT_KEY)
+        cliProjectName: $(SONAR_PROJECT_NAME)
         extraProperties: |
-          sonar.python.version=3.12
-          sonar.python.coverage.reportPaths=coverage.xml
-          # EXCLUSÕES: Ignora arquivos de sistema e scripts sem testes para bater a meta de 80%
-          sonar.exclusions=**/venv/**,**/__pycache__/**,**/tests/**
-          sonar.coverage.exclusions=scripts/push_observability.py
-      displayName: '☁️ Passo 6: Configurar Qualidade (SonarCloud)'
+          sonar.python.coverage.reportPaths=$(System.DefaultWorkingDirectory)/coverage.xml
+          sonar.javascript.lcov.reportPaths=$(System.DefaultWorkingDirectory)/coverage/lcov.info
+          sonar.sources=src
+          sonar.tests=tests
+      displayName: '🏗️  Preparar SonarCloud (Python / JS)'
 
-    - task: SonarCloudAnalyze@4
-      displayName: '☁️ Passo 7: Analisar Código'
+    # C#, C++
+    # Aponta para o XML no formato OpenCover gerado pelo Passo 4c.
+    # O glob "**/" é necessário porque o dotnet test cria uma subpasta
+    # com GUID aleatório dentro de TestResults a cada execução.
+    # (WIP)
 
-    - task: SonarCloudPublish@4
-      displayName: '☁️ Passo 8: Publicar Resultados'
+    # Java e Kotlin
+    # (WIP)
 
-    # -------------------------------------------------------------------------------
-    # OBSERVABILIDADE: Envio de sinais para Datadog e Grafana Cloud
-    # SEGURANÇA: Todas as variáveis $(Var) são mapeadas no bloco 'env'
-    # -------------------------------------------------------------------------------
+    # JS e Node.js
+    # (WIP)
+
+    # ===============================================================================
+    # PASSO 4 — INSTALAR DEPENDÊNCIAS + RODAR TESTES + CORREÇÃO DE CAMINHOS
+    # ===============================================================================
+    # O pytest-cov gera caminhos absolutos; o SonarCloud espera caminhos
+    # relativos a partir da raiz do projeto (ex: "src/modulo.py").
+    # A substituição abaixo remove o prefixo absoluto deixando só "src/...".
+    # A flag "-E" usa regex estendida para capturar qualquer prefixo de path.
+    # ===============================================================================
+
+    # --- 4a. Python ---
     - script: |
-        NOW=$(date +%s)
-        DURATION=$((NOW - START_TIME))
-        LOKI_TS="${NOW}000000000"
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pytest pytest-cov
+      condition: eq(variables['isPython'], 'true')
+      displayName: '📦 Instalar dependências Python'
 
-        echo "🚀 Iniciando despacho de telemetria..."
+    - script: |
+        pytest --cov=src --cov-report=xml
+      condition: eq(variables['isPython'], 'true')
+      displayName: '🧪 Testes Python + Cobertura'
 
-        # 1. DATADOG (Métrica de Pipeline OK)
-        echo "📡 Enviando métrica para o Datadog..."
-        curl -s -X POST "$DD_URL" -H "DD-API-KEY: $DD_KEY" -H "Content-Type: application/json" \
-          -d "{ \"series\": [{\"metric\": \"tinas.career.pipeline.success\", \"points\": [[$NOW, 1]], \"tags\": [\"branch:$B_NAME\"]}]}" \
-          && echo "✅ Datadog: OK" || echo "❌ Datadog: Falha"
+    - script: |
+        if grep -q 'filename="src/' coverage.xml; then
+          echo "ℹ️  Caminhos já estão no formato correto. Nenhuma correção necessária."
+        else
+          echo "🔨 Corrigindo caminhos absolutos no coverage.xml..."
+          sed -i -E 's|filename="[^"]*/src/|filename="src/|g' coverage.xml
+          echo "✅ Correção aplicada."
+        fi
+        echo "📄 Amostra do arquivo corrigido:"
+        grep "filename=" coverage.xml | head -n 5
+      condition: eq(variables['isPython'], 'true')
+      displayName: '🚑 Corrigir Caminhos no coverage.xml'
 
-        # 2. LOKI (Logs na Grafana Cloud)
-        echo "📋 Enviando logs para o Loki..."
-        curl -sS -X POST "$L_URL" -u "$L_USER:$L_TOKEN" -H "Content-Type: application/json" \
-          -d "{ \"streams\": [{ \"stream\": { \"job\": \"$J_NAME\", \"branch\": \"$B_NAME\" }, \"values\": [[ \"$LOKI_TS\", \"[SUCCESS] Pipeline finalizado em ${DURATION}s na branch $B_NAME\" ]] }]}" \
-          && echo "✅ Loki: OK" || echo "❌ Loki: Falha (Verifique a URL /loki/api/v1/push)"
+    # --- 4b. C# / .NET ---
+    # ===============================================================================
+    # FORMATO OPENCOVER — OBRIGATÓRIO PARA O SONARCLOUD
+    # ===============================================================================
+    # O XPlat Code Coverage gera Cobertura por padrão, mas o SonarScanner
+    # para .NET (MSBuild) só lê o formato OpenCover.
+    # A flag "-- DataCollectionRunSettings..." sobrescreve o formato em runtime,
+    # sem precisar de um arquivo .runsettings separado no repositório.
+    # ===============================================================================
+    # (WIP)
 
-        # 3. PROMETHEUS (Explicação técnica via Echo)
-        echo "📊 Prometheus: Métrica implícita enviada via Loki (Log-to-Metrics)."
-        echo "💡 Nota: O envio direto via curl falha por falta de compressão Snappy nativa no Bash."
+    # --- 4c. C++ ---
+    # (WIP)
+
+    # --- 4d. Java e Kotlin ---
+    # (WIP)
+
+    # --- 4e. JavaScript / Node.js ---
+    # (WIP)
+
+    # ===============================================================================
+    # PASSO 5 — EXECUTAR E PUBLICAR ANÁLISE SONARCLOUD
+    # ===============================================================================
+
+    - task: SonarCloudAnalyze@1
+      displayName: '🚀 Executar Scan SonarCloud'
+
+    - task: SonarCloudPublish@1
+      inputs:
+        pollingTimeoutSec: '300'
+      displayName: '📊 Publicar Métricas no Dashboard'
+
+    # ===============================================================================
+    # PASSO 6 — PUBLICAR RESULTADOS DE TESTES NO AZURE (opcional, mas útil)
+    # ===============================================================================
+    # Exibe os resultados na aba "Tests" dentro do pipeline no Azure DevOps.
+    # ===============================================================================
+    - task: PublishTestResults@2
+      condition: always()
+      inputs:
+        testResultsFormat: 'JUnit'
+        testResultsFiles:  '**/test-results*.xml'
+        failTaskOnFailedTests: true
+      displayName: '📋 Publicar Resultados de Testes'
+
+    # ===============================================================================
+    # COBERTURA NO AZURE DEVOPS
+    # ===============================================================================
+    # O Azure DevOps detecta e exibe cobertura automaticamente quando:
+    #   - Python/JS : o arquivo coverage.xml (formato Cobertura) está na raiz
+    #   - .NET      : o OpenCover XML está em TestResults/
+    #   - C++       : o formato e localização dependem da configuração do SonarCloud
+    #   - Java/Kotlin: o formato e localização dependem da configuração do SonarCloud
+    #   - JS/Node.js : o arquivo lcov.info está na pasta coverage/
+    # O SonarCloud também publica cobertura no seu próprio dashboard.
+    # Nenhuma task adicional é necessária — as duas fontes já cobrem isso.
+    # ===============================================================================
+
+    # ===============================================================================
+    # PASSO 7 — ENVIAR MÉTRICAS DE OBSERVABILIDADE (Datadog, Loki, Prometheus)
+    # ===============================================================================
+    #
+    #  ARQUITETURA DAS TRÊS FERRAMENTAS:
+    #
+    #  ┌─────────────┐   push    ┌─────────────┐  scrape  ┌─────────────┐
+    #  │   Pipeline  │ ────────► │ Pushgateway │ ───────► │ Prometheus  │
+    #  │  (este yml) │           │  (bridge)   │          │  + Grafana  │
+    #  └─────────────┘           └─────────────┘          └─────────────┘
+    #        │
+    #        │  push (HTTP POST)
+    #        ▼
+    #  ┌─────────────┐
+    #  │    Loki     │  ◄── pesquisa de logs no Grafana
+    #  └─────────────┘
+    #        │
+    #        │  push (HTTP POST)
+    #        ▼
+    #  ┌─────────────┐
+    #  │   Datadog   │  ◄── dashboard de saúde do CI/CD
+    #  └─────────────┘
+    #
+    #  IMPORTANTE: Os passos 7a e 7b usam `condition` opostas para garantir
+    #  que SEMPRE chegue um sinal — seja de sucesso ou de falha.
+    #  Métricas de observabilidade NUNCA devem quebrar o build (|| true).
+    # ==========================================================================
+
+    # --- 7a. Observabilidade: SUCESSO ---
+    - script: |
+        # --- Calcular duração do pipeline ---
+        END_TIME=$(date +%s)
+        DURATION=$((END_TIME - $(PIPELINE_START_TIME)))
+        TIMESTAMP=$(date +%s)
+        BRANCH="$(Build.SourceBranchName)"
+        PROJECT="$(System.TeamProject)"
+
+        echo "✅ Build concluído em ${DURATION}s. Enviando métricas..."
+        echo "📊 Métrica: pipeline.build.duration, Valor: ${DURATION}s, Branch: ${BRANCH}, Projeto: ${PROJECT}"
+
+        # ------------------------------------------------------------------
+        # 1. DATADOG — Saúde da infraestrutura e CI/CD
+        # ------------------------------------------------------------------
+        # Tags permitem filtrar por projeto/branch no dashboard do Datadog.
+        # Enviamos duas métricas: status (1=ok) e duração em segundos.
+        # Usa $DD_API_KEY que foi injetado via `env:` no final deste step.
+        # ------------------------------------------------------------------
+        # Resolve a linguagem antes de montar o JSON — evita lógica dentro do curl
+        if   [ '$(isPython)' = 'true' ];  then LANG_TAG="python"
+        elif [ '$(isJS)'     = 'true' ];  then LANG_TAG="javascript"
+        elif [ '$(isCSharp)' = 'true' ];  then LANG_TAG="dotnet"
+        elif [ '$(isCpp)'    = 'true' ];  then LANG_TAG="cpp"
+        elif [ '$(isJava)'   = 'true' ];  then LANG_TAG="java"
+        elif [ '$(isKotlin)' = 'true' ];  then LANG_TAG="kotlin"
+        else                                   LANG_TAG="unknown"
+        fi
+        echo "🏷️  Linguagem identificada para Datadog: $LANG_TAG"
+
+        curl --silent --fail-with-body \
+          -X POST "$(DATADOG_API_URL)" \
+          -H "Content-Type: application/json" \
+          -H "DD-API-KEY: $DD_API_KEY" \
+          -d "{
+            \"series\": [
+              {
+                \"metric\": \"cdd.pipeline.success\",
+                \"points\": [[$TIMESTAMP, 1]],
+                \"tags\": [\"project:$PROJECT\", \"branch:$BRANCH\", \"language:$LANG_TAG\"]
+              },
+              {
+                \"metric\": \"cdd.pipeline.duration_seconds\",
+                \"points\": [[$TIMESTAMP, $DURATION]],
+                \"tags\": [\"project:$PROJECT\", \"branch:$BRANCH\", \"language:$LANG_TAG\"]
+              }
+            ]
+          }" \
+          && echo "📡 Datadog: métricas enviadas." \
+          || echo "⚠️  Datadog: falha ao enviar métricas (não crítico)."
+
+        # ------------------------------------------------------------------
+        # 2. LOKI — Centralização de logs
+        # ------------------------------------------------------------------
+        # O Loki recebe logs via HTTP POST no endpoint /loki/api/v1/push.
+        # `streams` é a unidade de agrupamento; cada stream tem labels (como
+        # tags no Datadog) e `values` que é um array de [timestamp_ns, mensagem].
+        # O timestamp precisa estar em NANOSSEGUNDOS (epoch * 10^9).
+        # ------------------------------------------------------------------
+        LOKI_TIMESTAMP="${TIMESTAMP}000000000"  # Converte segundos → nanossegundos
+
+        curl --silent --fail-with-body \
+          -X POST "$(LOKI_URL)/loki/api/v1/push" \
+          -H "Content-Type: application/json" \
+          -d "{
+            \"streams\": [{
+              \"stream\": {
+                \"job\":     \"$(OBS_JOB_NAME)\",
+                \"project\": \"$PROJECT\",
+                \"branch\":  \"$BRANCH\",
+                \"status\":  \"success\"
+              },
+              \"values\": [[
+                \"$LOKI_TIMESTAMP\",
+                \"[SUCCESS] Pipeline concluído em ${DURATION}s | Build=$(Build.BuildId) | Commit=$(Build.SourceVersion)\"
+              ]]
+            }]
+          }" \
+          && echo "📋 Loki: log de sucesso enviado." \
+          || echo "⚠️  Loki: falha ao enviar log de sucesso (não crítico)."
+
+        # ------------------------------------------------------------------
+        # 3. PROMETHEUS PUSHGATEWAY — Métricas de negócio e dados
+        # ------------------------------------------------------------------
+        # O Prometheus é PULL-BASED: ele não aceita dados diretamente.
+        # O Pushgateway funciona como uma caixa de entrada: o pipeline EMPURRA
+        # métricas para lá, e o Prometheus as COLETA periodicamente.
+        #
+        # Formato do payload: texto simples (exposition format do Prometheus).
+        # Cada linha define: # HELP (descrição), # TYPE (tipo) e o valor.
+        # A URL inclui /metrics/job/<nome> para organizar no Prometheus.
+        # ------------------------------------------------------------------
+        cat <<EOF | curl --silent --fail-with-body \
+          --data-binary @- \
+          "$(PUSHGATEWAY_URL)/metrics/job/$(OBS_JOB_NAME)/instance/$PROJECT"
+
+        # HELP cdd_pipeline_success Resultado do pipeline (1=sucesso, 0=falha)
+        # TYPE cdd_pipeline_success gauge
+        cdd_pipeline_success{branch="$BRANCH",project="$PROJECT"} 1
+
+        # HELP cdd_pipeline_duration_seconds Duração total do pipeline em segundos
+        # TYPE cdd_pipeline_duration_seconds gauge
+        cdd_pipeline_duration_seconds{branch="$BRANCH",project="$PROJECT"} $DURATION
+        EOF
+
+        echo "📊 Pushgateway: métricas de sucesso enviadas ao Prometheus." \
+          || echo "⚠️  Pushgateway: falha ao enviar métricas (não crítico)."
 
       condition: succeeded()
-      displayName: '📡 Passo 9: Observabilidade (Sucesso)'
+      displayName: '📡 Observabilidade — Sucesso (Datadog + Loki + Prometheus)'
       env:
-        START_TIME: $(PIPELINE_START_TIME)
-        B_NAME: $(Build.SourceBranchName)
-        DD_KEY: $(DATADOG_API_KEY)
-        DD_URL: https://api.datadoghq.com/api/v1/series
-        L_URL: $(LOKI_URL)
-        L_USER: $(LOKI_USER)
-        L_TOKEN: $(LOKI_TOKEN)
-        J_NAME: $(OBS_JOB_NAME)
+        DD_API_KEY: $(DATADOG_API_KEY) # Injetado como variável secreta no Azure DevOps (Library > Secret Variables)
 
+    # --- 7b. Observabilidade: FALHA ---
+    # Espelho do 7a, mas com condition: failed().
+    # Sem ele a falha no pipeline gera silêncio no dashboard — indistinguível de um build que simplesmente
+    # ainda não rodou. Silence ≠ OK em observabilidade.
     - script: |
-        echo "🚨 Pipeline falhou! Enviando alerta de erro..."
-        NOW=$(date +%s)
-        curl -s -X POST "$DD_URL" -H "DD-API-KEY: $DD_KEY" -H "Content-Type: application/json" \
-          -d "{\"series\":[{\"metric\":\"tinas.career.pipeline.failure\",\"points\":[[$NOW,1]],\"tags\":[\"branch:$B_NAME\"]}]}"
-      condition: failed()
-      displayName: '🚨 Passo 10: Observabilidade (Falha)'
-      env:
-        B_NAME: $(Build.SourceBranchName)
-        DD_KEY: $(DATADOG_API_KEY)
-        DD_URL: https://api.datadoghq.com/api/v1/series
+        TIMESTAMP=$(date +%s)
+        LOKI_TIMESTAMP="${TIMESTAMP}000000000"
+        BRANCH="$(Build.SourceBranchName)"
+        PROJECT="$(System.TeamProject)"
 
+        echo "❌ Build falhou. Enviando alertas de falha..."
+
+        # Datadog — métrica de falha
+        curl --silent \
+          -X POST "$(DATADOG_API_URL)" \
+          -H "Content-Type: application/json" \
+          -H "DD-API-KEY: $DD_API_KEY" \
+          -d "{
+            \"series\": [{
+              \"metric\": \"cdd.pipeline.failure\",
+              \"points\": [[$TIMESTAMP, 1]],
+              \"tags\": [\"project:$PROJECT\", \"branch:$BRANCH\"]
+            }]
+          }" \
+          && echo "📡 Datadog: alerta de falha enviado." \
+          || echo "##[warning] Datadog: falha ao enviar alerta."
+
+        # Loki — log de falha (possível pesquisar no Grafana)
+        curl --silent \
+          -X POST "$(LOKI_URL)/loki/api/v1/push" \
+          -H "Content-Type: application/json" \
+          -d "{
+            \"streams\": [{
+              \"stream\": {
+                \"job\":     \"$(OBS_JOB_NAME)\",
+                \"project\": \"$PROJECT\",
+                \"branch\":  \"$BRANCH\",
+                \"status\":  \"failure\"
+              },
+              \"values\": [[
+                \"$LOKI_TIMESTAMP\",
+                \"[FAILURE] Pipeline falhou | Build=$(Build.BuildId) | Commit=$(Build.SourceVersion)\"
+              ]]
+            }]
+          }" \
+          && echo "📋 Loki: log de falha enviado." \
+          || echo "⚠️  Loki: falha ao enviar log."
+
+        # Pushgateway — métrica de falha para o Prometheus
+        printf '# HELP cdd_pipeline_success Resultado do pipeline\n# TYPE cdd_pipeline_success gauge\ncdd_pipeline_success{branch="%s",project="%s"} 0\n' \
+          "$BRANCH" "$PROJECT" \
+          | curl --silent --data-binary @- \
+            "$(PUSHGATEWAY_URL)/metrics/job/$(OBS_JOB_NAME)/instance/$PROJECT" \
+          && echo "📊 Pushgateway: métrica de falha enviada." \
+          || echo "##[warning] Pushgateway: falha ao enviar métrica."
+
+      condition: failed()
+      displayName: '🚨 Observabilidade — Falha (Datadog + Loki + Prometheus)'
+      env:
+        DD_API_KEY: $(DATADOG_API_KEY)
 # @file Fim do arquivo azure-pipelines.yaml
