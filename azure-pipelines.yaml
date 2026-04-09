@@ -348,17 +348,21 @@ jobs:
         # ------------------------------------------------------------------
         # 3. GRAFANA CLOUD - PROMETHEUS (metricas via InfluxDB line protocol)
         # ------------------------------------------------------------------
-        # Formato: measurement,tag=value field=value timestamp_ns
-        INFLUX_TIMESTAMP="${TIMESTAMP}000000000"
+        # Constroi URL do InfluxDB a partir da URL do Prometheus
+        # prometheus-prod-XX... -> influx-prod-XX...
+        INFLUX_URL=$(echo "$PROMETHEUS_ENDPOINT" | sed 's|prometheus-prod|influx-prod|' | sed 's|/api/prom/push|/api/v1/push/influx/write|')
+        echo "InfluxDB URL construida: $INFLUX_URL"
 
+        # Formato InfluxDB line protocol: measurement,tag=value field=value timestamp_ns
+        INFLUX_TIMESTAMP="${TIMESTAMP}000000000"
         echo "cdd_pipeline,branch=$BRANCH,project=$PROJECT success=1,duration_seconds=$DURATION $INFLUX_TIMESTAMP" > /tmp/metrics.txt
 
         curl --silent --fail-with-body \
-          -X POST "${PROMETHEUS_ENDPOINT/\/api\/prom\/push/\/api/v1/push/influx/write}" \
+          -X POST "$INFLUX_URL" \
           -H "Content-Type: text/plain" \
           -u "$PROMETHEUS_USER:$PROMETHEUS_TOKEN" \
           --data-binary @/tmp/metrics.txt \
-          && echo "Prometheus (Grafana Cloud): metricas enviadas." \
+          && echo "Prometheus/InfluxDB (Grafana Cloud): metricas enviadas." \
           || echo "Prometheus: falha ao enviar metricas (nao critico)."
 
       condition: succeeded()
@@ -430,11 +434,12 @@ jobs:
           || echo "Loki: falha ao enviar log."
 
         # Prometheus (Grafana Cloud via InfluxDB line protocol)
+        INFLUX_URL=$(echo "$PROMETHEUS_ENDPOINT" | sed 's|prometheus-prod|influx-prod|' | sed 's|/api/prom/push|/api/v1/push/influx/write|')
         INFLUX_TIMESTAMP="${TIMESTAMP}000000000"
         echo "cdd_pipeline,branch=$BRANCH,project=$PROJECT success=0 $INFLUX_TIMESTAMP" > /tmp/metrics.txt
 
         curl --silent \
-          -X POST "${PROMETHEUS_ENDPOINT/\/api\/prom\/push/\/api/v1/push/influx/write}" \
+          -X POST "$INFLUX_URL" \
           -H "Content-Type: text/plain" \
           -u "$PROMETHEUS_USER:$PROMETHEUS_TOKEN" \
           --data-binary @/tmp/metrics.txt \
