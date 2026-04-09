@@ -37,8 +37,11 @@ pool:
   vmImage: 'ubuntu-latest'
 
 variables:
+  # Variable Groups (secrets da Library)
   - group: DATADOG_API_KEY
+  - group: OBSERVABILITY_KEYS
 
+  # SonarCloud
   - name: SONAR_ORGANIZATION
     value: 'tinalmeid'
 
@@ -51,6 +54,7 @@ variables:
   - name: SONAR_SERVICE_CONNECTION
     value: 'SonarCloud-Service-Connection'
 
+  # Versoes de runtime
   - name: PYTHON_VERSION
     value: '3.10'
 
@@ -72,6 +76,7 @@ variables:
   - name: JAVA_VERSION
     value: '17'
 
+  # Flags de linguagem
   - name: isPython
     value: 'false'
 
@@ -90,14 +95,9 @@ variables:
   - name: isJS
     value: 'false'
 
+  # Observabilidade
   - name: DATADOG_API_URL
     value: 'https://api.datadoghq.com/api/v1/series'
-
-  - name: LOKI_URL
-    value: 'http://seu-loki:3100'
-
-  - name: PUSHGATEWAY_URL
-    value: 'http://seu-pushgateway:9091'
 
   - name: OBS_JOB_NAME
     value: 'azure-pipeline'
@@ -225,7 +225,7 @@ jobs:
           echo "Testes devem ser adicionados posteriormente"
           echo "##vso[task.setvariable variable=testsFound]false"
 
-          # Cria um coverage.xml vazio mas valido (sem arquivos fictícios)
+          # Cria um coverage.xml vazio mas valido (sem arquivos ficticios)
           echo '<?xml version="1.0" ?>' > coverage.xml
           echo '<coverage version="7.0" timestamp="1234567890" lines-valid="0" lines-covered="0" line-rate="0" branches-valid="0" branches-covered="0" branch-rate="0" complexity="0">' >> coverage.xml
           echo '  <packages>' >> coverage.xml
@@ -275,7 +275,7 @@ jobs:
       displayName: 'Publicar Resultados de Testes'
 
     # ===============================================================================
-    # PASSO 7 - OBSERVABILIDADE (Datadog, Loki, Prometheus)
+    # PASSO 7 - OBSERVABILIDADE (Datadog + Grafana Cloud)
     # ===============================================================================
 
     # --- 7a. Observabilidade: SUCESSO ---
@@ -295,6 +295,9 @@ jobs:
         else                                  LANG_TAG="unknown"
         fi
 
+        # ------------------------------------------------------------------
+        # 1. DATADOG
+        # ------------------------------------------------------------------
         curl --silent --fail-with-body \
           -X POST "$DATADOG_URL" \
           -H "Content-Type: application/json" \
@@ -316,11 +319,15 @@ jobs:
           && echo "Datadog: metricas enviadas." \
           || echo "Datadog: falha ao enviar metricas (nao critico)."
 
+        # ------------------------------------------------------------------
+        # 2. GRAFANA CLOUD - LOKI (logs)
+        # ------------------------------------------------------------------
         LOKI_TIMESTAMP="${TIMESTAMP}000000000"
 
         curl --silent --fail-with-body \
           -X POST "$LOKI_ENDPOINT/loki/api/v1/push" \
           -H "Content-Type: application/json" \
+          -u "$LOKI_USER:$LOKI_TOKEN" \
           -d "{
             \"streams\": [{
               \"stream\": {
@@ -335,22 +342,25 @@ jobs:
               ]]
             }]
           }" \
-          && echo "Loki: log de sucesso enviado." \
+          && echo "Loki (Grafana Cloud): log de sucesso enviado." \
           || echo "Loki: falha ao enviar log (nao critico)."
 
-        echo "# HELP cdd_pipeline_success Resultado do pipeline (1=sucesso, 0=falha)" > /tmp/metrics.txt
-        echo "# TYPE cdd_pipeline_success gauge" >> /tmp/metrics.txt
-        echo "cdd_pipeline_success{branch=\"$BRANCH\",project=\"$PROJECT\"} 1" >> /tmp/metrics.txt
-        echo "" >> /tmp/metrics.txt
-        echo "# HELP cdd_pipeline_duration_seconds Duracao total do pipeline em segundos" >> /tmp/metrics.txt
-        echo "# TYPE cdd_pipeline_duration_seconds gauge" >> /tmp/metrics.txt
-        echo "cdd_pipeline_duration_seconds{branch=\"$BRANCH\",project=\"$PROJECT\"} $DURATION" >> /tmp/metrics.txt
+        # ------------------------------------------------------------------
+        # 3. GRAFANA CLOUD - PROMETHEUS (metricas)
+        # ------------------------------------------------------------------
+        echo "# HELP cdd_pipeline_success Resultado do pipeline (1=sucesso, 0=falha)
+        # TYPE cdd_pipeline_success gauge
+        cdd_pipeline_success{branch=\"$BRANCH\",project=\"$PROJECT\"} 1
+        # HELP cdd_pipeline_duration_seconds Duracao total do pipeline em segundos
+        # TYPE cdd_pipeline_duration_seconds gauge
+        cdd_pipeline_duration_seconds{branch=\"$BRANCH\",project=\"$PROJECT\"} $DURATION" > /tmp/metrics.txt
 
         curl --silent --fail-with-body \
+          -X POST "$PROMETHEUS_ENDPOINT" \
+          -u "$PROMETHEUS_USER:$PROMETHEUS_TOKEN" \
           --data-binary @/tmp/metrics.txt \
-          "$PUSHGATEWAY_ENDPOINT/metrics/job/$JOB_NAME/instance/$PROJECT" \
-          && echo "Pushgateway: metricas enviadas." \
-          || echo "Pushgateway: falha ao enviar metricas (nao critico)."
+          && echo "Prometheus (Grafana Cloud): metricas enviadas." \
+          || echo "Prometheus: falha ao enviar metricas (nao critico)."
 
       condition: succeeded()
       displayName: 'Observabilidade - Sucesso'
@@ -362,7 +372,11 @@ jobs:
         COMMIT: $(Build.SourceVersion)
         DATADOG_URL: $(DATADOG_API_URL)
         LOKI_ENDPOINT: $(LOKI_URL)
-        PUSHGATEWAY_ENDPOINT: $(PUSHGATEWAY_URL)
+        LOKI_USER: $(LOKI_USER)
+        LOKI_TOKEN: $(LOKI_TOKEN)
+        PROMETHEUS_ENDPOINT: $(PROMETHEUS_URL)
+        PROMETHEUS_USER: $(PROMETHEUS_USER)
+        PROMETHEUS_TOKEN: $(PROMETHEUS_TOKEN)
         JOB_NAME: $(OBS_JOB_NAME)
         START_TIME: $(PIPELINE_START_TIME)
         IS_PYTHON: $(isPython)
@@ -379,6 +393,7 @@ jobs:
 
         echo "Build falhou. Enviando alertas de falha..."
 
+        # Datadog
         curl --silent \
           -X POST "$DATADOG_URL" \
           -H "Content-Type: application/json" \
@@ -393,9 +408,11 @@ jobs:
           && echo "Datadog: alerta de falha enviado." \
           || echo "Datadog: falha ao enviar alerta."
 
+        # Loki (Grafana Cloud)
         curl --silent \
           -X POST "$LOKI_ENDPOINT/loki/api/v1/push" \
           -H "Content-Type: application/json" \
+          -u "$LOKI_USER:$LOKI_TOKEN" \
           -d "{
             \"streams\": [{
               \"stream\": {
@@ -413,14 +430,17 @@ jobs:
           && echo "Loki: log de falha enviado." \
           || echo "Loki: falha ao enviar log."
 
-        echo "# HELP cdd_pipeline_success Resultado do pipeline" > /tmp/metrics.txt
-        echo "# TYPE cdd_pipeline_success gauge" >> /tmp/metrics.txt
-        echo "cdd_pipeline_success{branch=\"$BRANCH\",project=\"$PROJECT\"} 0" >> /tmp/metrics.txt
+        # Prometheus (Grafana Cloud)
+        echo "# HELP cdd_pipeline_success Resultado do pipeline
+        # TYPE cdd_pipeline_success gauge
+        cdd_pipeline_success{branch=\"$BRANCH\",project=\"$PROJECT\"} 0" > /tmp/metrics.txt
 
-        curl --silent --data-binary @/tmp/metrics.txt \
-          "$PUSHGATEWAY_ENDPOINT/metrics/job/$JOB_NAME/instance/$PROJECT" \
-          && echo "Pushgateway: metrica de falha enviada." \
-          || echo "Pushgateway: falha ao enviar metrica."
+        curl --silent \
+          -X POST "$PROMETHEUS_ENDPOINT" \
+          -u "$PROMETHEUS_USER:$PROMETHEUS_TOKEN" \
+          --data-binary @/tmp/metrics.txt \
+          && echo "Prometheus: metrica de falha enviada." \
+          || echo "Prometheus: falha ao enviar metrica."
 
       condition: failed()
       displayName: 'Observabilidade - Falha'
@@ -432,5 +452,9 @@ jobs:
         COMMIT: $(Build.SourceVersion)
         DATADOG_URL: $(DATADOG_API_URL)
         LOKI_ENDPOINT: $(LOKI_URL)
-        PUSHGATEWAY_ENDPOINT: $(PUSHGATEWAY_URL)
+        LOKI_USER: $(LOKI_USER)
+        LOKI_TOKEN: $(LOKI_TOKEN)
+        PROMETHEUS_ENDPOINT: $(PROMETHEUS_URL)
+        PROMETHEUS_USER: $(PROMETHEUS_USER)
+        PROMETHEUS_TOKEN: $(PROMETHEUS_TOKEN)
         JOB_NAME: $(OBS_JOB_NAME)
