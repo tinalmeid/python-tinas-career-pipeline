@@ -12,7 +12,7 @@
 #
 # AUTOR          : Cristina de Almeida
 # DATA           : Abril de 2026
-# VERSION        : 1.0.1
+# VERSION        : 1.0.2
 # ===================================================================================
 # É necessário configurar a pipeline no Azure DevOps:
 # 1. Vá em Pipelines -> New Pipeline.
@@ -388,16 +388,17 @@ jobs:
     #  IMPORTANTE: Os passos 7a e 7b usam `condition` opostas para garantir
     #  que SEMPRE chegue um sinal — seja de sucesso ou de falha.
     #  Métricas de observabilidade NUNCA devem quebrar o build (|| true).
+    #
+    #  SEGURANÇA: Todas as variáveis do Azure DevOps são passadas via `env:`
+    #  para evitar injeção de código (SonarCloud Security Blocker).
     # ==========================================================================
 
     # --- 7a. Observabilidade: SUCESSO ---
     - script: |
         # --- Calcular duração do pipeline ---
         END_TIME=$(date +%s)
-        DURATION=$((END_TIME - $(PIPELINE_START_TIME)))
+        DURATION=$((END_TIME - START_TIME))
         TIMESTAMP=$(date +%s)
-        BRANCH="$(Build.SourceBranchName)"
-        PROJECT="$(System.TeamProject)"
 
         echo "✅ Build concluído em ${DURATION}s. Enviando métricas..."
         echo "📊 Métrica: pipeline.build.duration, Valor: ${DURATION}s, Branch: ${BRANCH}, Projeto: ${PROJECT}"
@@ -410,18 +411,18 @@ jobs:
         # Usa $DD_API_KEY que foi injetado via `env:` no final deste step.
         # ------------------------------------------------------------------
         # Resolve a linguagem antes de montar o JSON — evita lógica dentro do curl
-        if   [ '$(isPython)' = 'true' ];  then LANG_TAG="python"
-        elif [ '$(isJS)'     = 'true' ];  then LANG_TAG="javascript"
-        elif [ '$(isCSharp)' = 'true' ];  then LANG_TAG="dotnet"
-        elif [ '$(isCpp)'    = 'true' ];  then LANG_TAG="cpp"
-        elif [ '$(isJava)'   = 'true' ];  then LANG_TAG="java"
-        elif [ '$(isKotlin)' = 'true' ];  then LANG_TAG="kotlin"
-        else                                   LANG_TAG="unknown"
+        if   [ "$IS_PYTHON" = 'true' ];  then LANG_TAG="python"
+        elif [ "$IS_JS"     = 'true' ];  then LANG_TAG="javascript"
+        elif [ "$IS_CSHARP" = 'true' ];  then LANG_TAG="dotnet"
+        elif [ "$IS_CPP"    = 'true' ];  then LANG_TAG="cpp"
+        elif [ "$IS_JAVA"   = 'true' ];  then LANG_TAG="java"
+        elif [ "$IS_KOTLIN" = 'true' ];  then LANG_TAG="kotlin"
+        else                                  LANG_TAG="unknown"
         fi
         echo "🏷️  Linguagem identificada para Datadog: $LANG_TAG"
 
         curl --silent --fail-with-body \
-          -X POST "$(DATADOG_API_URL)" \
+          -X POST "$DATADOG_URL" \
           -H "Content-Type: application/json" \
           -H "DD-API-KEY: $DD_API_KEY" \
           -d "{
@@ -452,19 +453,19 @@ jobs:
         LOKI_TIMESTAMP="${TIMESTAMP}000000000"  # Converte segundos → nanossegundos
 
         curl --silent --fail-with-body \
-          -X POST "$(LOKI_URL)/loki/api/v1/push" \
+          -X POST "$LOKI_ENDPOINT/loki/api/v1/push" \
           -H "Content-Type: application/json" \
           -d "{
             \"streams\": [{
               \"stream\": {
-                \"job\":     \"$(OBS_JOB_NAME)\",
+                \"job\":     \"$JOB_NAME\",
                 \"project\": \"$PROJECT\",
                 \"branch\":  \"$BRANCH\",
                 \"status\":  \"success\"
               },
               \"values\": [[
                 \"$LOKI_TIMESTAMP\",
-                \"[SUCCESS] Pipeline concluído em ${DURATION}s | Build=$(Build.BuildId) | Commit=$(Build.SourceVersion)\"
+                \"[SUCCESS] Pipeline concluído em ${DURATION}s | Build=$BUILD_ID | Commit=$COMMIT\"
               ]]
             }]
           }" \
@@ -484,7 +485,7 @@ jobs:
         # ------------------------------------------------------------------
         cat <<EOF | curl --silent --fail-with-body \
           --data-binary @- \
-          "$(PUSHGATEWAY_URL)/metrics/job/$(OBS_JOB_NAME)/instance/$PROJECT"
+          "$PUSHGATEWAY_ENDPOINT/metrics/job/$JOB_NAME/instance/$PROJECT"
 
         # HELP cdd_pipeline_success Resultado do pipeline (1=sucesso, 0=falha)
         # TYPE cdd_pipeline_success gauge
@@ -501,7 +502,23 @@ jobs:
       condition: succeeded()
       displayName: '📡 Observabilidade — Sucesso (Datadog + Loki + Prometheus)'
       env:
-        DD_API_KEY: $(DATADOG_API_KEY) # Injetado como variável secreta no Azure DevOps (Library > Secret Variables)
+        # SEGURANÇA: Variáveis passadas via env: para evitar injeção de código
+        DD_API_KEY: $(DATADOG_API_KEY)
+        BRANCH: $(Build.SourceBranchName)
+        PROJECT: $(System.TeamProject)
+        BUILD_ID: $(Build.BuildId)
+        COMMIT: $(Build.SourceVersion)
+        DATADOG_URL: $(DATADOG_API_URL)
+        LOKI_ENDPOINT: $(LOKI_URL)
+        PUSHGATEWAY_ENDPOINT: $(PUSHGATEWAY_URL)
+        JOB_NAME: $(OBS_JOB_NAME)
+        START_TIME: $(PIPELINE_START_TIME)
+        IS_PYTHON: $(isPython)
+        IS_JS: $(isJS)
+        IS_CSHARP: $(isCSharp)
+        IS_CPP: $(isCpp)
+        IS_JAVA: $(isJava)
+        IS_KOTLIN: $(isKotlin)
 
     # --- 7b. Observabilidade: FALHA ---
     # Espelho do 7a, mas com condition: failed().
@@ -510,14 +527,12 @@ jobs:
     - script: |
         TIMESTAMP=$(date +%s)
         LOKI_TIMESTAMP="${TIMESTAMP}000000000"
-        BRANCH="$(Build.SourceBranchName)"
-        PROJECT="$(System.TeamProject)"
 
         echo "❌ Build falhou. Enviando alertas de falha..."
 
         # Datadog — métrica de falha
         curl --silent \
-          -X POST "$(DATADOG_API_URL)" \
+          -X POST "$DATADOG_URL" \
           -H "Content-Type: application/json" \
           -H "DD-API-KEY: $DD_API_KEY" \
           -d "{
@@ -532,19 +547,19 @@ jobs:
 
         # Loki — log de falha (possível pesquisar no Grafana)
         curl --silent \
-          -X POST "$(LOKI_URL)/loki/api/v1/push" \
+          -X POST "$LOKI_ENDPOINT/loki/api/v1/push" \
           -H "Content-Type: application/json" \
           -d "{
             \"streams\": [{
               \"stream\": {
-                \"job\":     \"$(OBS_JOB_NAME)\",
+                \"job\":     \"$JOB_NAME\",
                 \"project\": \"$PROJECT\",
                 \"branch\":  \"$BRANCH\",
                 \"status\":  \"failure\"
               },
               \"values\": [[
                 \"$LOKI_TIMESTAMP\",
-                \"[FAILURE] Pipeline falhou | Build=$(Build.BuildId) | Commit=$(Build.SourceVersion)\"
+                \"[FAILURE] Pipeline falhou | Build=$BUILD_ID | Commit=$COMMIT\"
               ]]
             }]
           }" \
@@ -555,12 +570,22 @@ jobs:
         printf '# HELP cdd_pipeline_success Resultado do pipeline\n# TYPE cdd_pipeline_success gauge\ncdd_pipeline_success{branch="%s",project="%s"} 0\n' \
           "$BRANCH" "$PROJECT" \
           | curl --silent --data-binary @- \
-            "$(PUSHGATEWAY_URL)/metrics/job/$(OBS_JOB_NAME)/instance/$PROJECT" \
+            "$PUSHGATEWAY_ENDPOINT/metrics/job/$JOB_NAME/instance/$PROJECT" \
           && echo "📊 Pushgateway: métrica de falha enviada." \
           || echo "##[warning] Pushgateway: falha ao enviar métrica."
 
       condition: failed()
       displayName: '🚨 Observabilidade — Falha (Datadog + Loki + Prometheus)'
       env:
+        # SEGURANÇA: Variáveis passadas via env: para evitar injeção de código
         DD_API_KEY: $(DATADOG_API_KEY)
+        BRANCH: $(Build.SourceBranchName)
+        PROJECT: $(System.TeamProject)
+        BUILD_ID: $(Build.BuildId)
+        COMMIT: $(Build.SourceVersion)
+        DATADOG_URL: $(DATADOG_API_URL)
+        LOKI_ENDPOINT: $(LOKI_URL)
+        PUSHGATEWAY_ENDPOINT: $(PUSHGATEWAY_URL)
+        JOB_NAME: $(OBS_JOB_NAME)
+
 # @file Fim do arquivo azure-pipelines.yaml
