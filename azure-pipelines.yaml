@@ -176,16 +176,16 @@ jobs:
         version: '8.x'
       displayName: 'Configurar .NET SDK 8.x'
 
-    - task: NodeTool@0
+    - task: UseNode@1
       condition: eq(variables['isJS'], 'true')
       inputs:
-        versionSpec: $(NODE_VERSION)
+        version: $(NODE_VERSION)
       displayName: 'Configurar Node.js $(NODE_VERSION)'
 
     # ===============================================================================
     # PASSO 3 - PREPARAR ANALISE SONARCLOUD
     # ===============================================================================
-    - task: SonarCloudPrepare@3
+    - task: SonarCloudPrepare@4
       condition: or(eq(variables['isPython'], 'true'), eq(variables['isJS'], 'true'))
       inputs:
         SonarCloud: $(SONAR_SERVICE_CONNECTION)
@@ -225,22 +225,13 @@ jobs:
           echo "Testes devem ser adicionados posteriormente"
           echo "##vso[task.setvariable variable=testsFound]false"
 
-          # Cria um coverage.xml valido para o SonarCloud (formato Cobertura)
+          # Cria um coverage.xml vazio mas valido (sem arquivos fictícios)
           echo '<?xml version="1.0" ?>' > coverage.xml
-          echo '<coverage version="7.0" timestamp="1234567890" lines-valid="1" lines-covered="1" line-rate="1.0" branches-valid="0" branches-covered="0" branch-rate="0" complexity="0">' >> coverage.xml
+          echo '<coverage version="7.0" timestamp="1234567890" lines-valid="0" lines-covered="0" line-rate="0" branches-valid="0" branches-covered="0" branch-rate="0" complexity="0">' >> coverage.xml
           echo '  <packages>' >> coverage.xml
-          echo '    <package name="." line-rate="1.0" branch-rate="0" complexity="0">' >> coverage.xml
-          echo '      <classes>' >> coverage.xml
-          echo '        <class name="__placeholder__.py" filename="__placeholder__.py" line-rate="1.0" branch-rate="0" complexity="0">' >> coverage.xml
-          echo '          <lines>' >> coverage.xml
-          echo '            <line number="1" hits="1"/>' >> coverage.xml
-          echo '          </lines>' >> coverage.xml
-          echo '        </class>' >> coverage.xml
-          echo '      </classes>' >> coverage.xml
-          echo '    </package>' >> coverage.xml
           echo '  </packages>' >> coverage.xml
           echo '</coverage>' >> coverage.xml
-          echo "coverage.xml placeholder criado para SonarCloud"
+          echo "coverage.xml vazio criado para SonarCloud"
         fi
       condition: eq(variables['isPython'], 'true')
       displayName: 'Testes Python + Cobertura'
@@ -264,10 +255,10 @@ jobs:
     # ===============================================================================
     # PASSO 5 - EXECUTAR E PUBLICAR ANALISE SONARCLOUD
     # ===============================================================================
-    - task: SonarCloudAnalyze@3
+    - task: SonarCloudAnalyze@4
       displayName: 'Executar Scan SonarCloud'
 
-    - task: SonarCloudPublish@3
+    - task: SonarCloudPublish@4
       inputs:
         pollingTimeoutSec: '300'
       displayName: 'Publicar Metricas no Dashboard'
