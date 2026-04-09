@@ -38,12 +38,14 @@ black==24.10.0              # Formatador automático (código bonito e padroniza
 ruff==0.8.6                 # Linter rápido (detecta erros de estilo)
 mypy==1.14.1                # Type checker (valida tipos estáticos)
 isort==5.13.2               # Organiza imports (ordem alfabética/grupos)
+httpx==0.27.2               # Cliente HTTP para testes manuais de APIs (também útil para debugging)
 
 # -----------------------------------------------------------------------------------
 # Debugging (Depuração)
 # -----------------------------------------------------------------------------------
 ipython==8.31.0             # Shell interativo melhorado (debug poderoso)
 httpx==0.27.2               # Cliente HTTP para testar APIs manualmente
+requests==2.32.3             # Biblioteca HTTP para testes manuais e debugging
 
 # -----------------------------------------------------------------------------------
 # Security (Segurança)

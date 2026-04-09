@@ -1,6 +1,6 @@
 """
 @file scripts/push_observability.py
-@description: cript para enviar métricas e logs para a Grafana Cloud (Loki e Prometheus).
+@description: Script para enviar métricas e logs para a Grafana Cloud (Loki e Prometheus).
 Garante a compressão correta para evitar erros de 'snappy corrupt input'.
 
 @autor: Tina de Almeida
@@ -26,7 +26,7 @@ def send_to_loki():
         "streams": [
             {
                 "stream": {"job": os.getenv("J_NAME", "career-pipeline")},
-                "values": [[str(int(time.time() * 1e9)), f"Pipeline finalizado com sucesso"]]
+                "values": [[str(int(time.time() * 1e9)), "Pipeline finalizado com sucesso"]]
             }
         ]
     }
