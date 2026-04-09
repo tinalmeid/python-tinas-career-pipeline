@@ -353,9 +353,13 @@ jobs:
         INFLUX_URL=$(echo "$PROMETHEUS_ENDPOINT" | sed 's|prometheus-prod|influx-prod|' | sed 's|/api/prom/push|/api/v1/push/influx/write|')
         echo "InfluxDB URL construida: $INFLUX_URL"
 
+        # Escapa espacos nas tags (substitui por underscore)
+        BRANCH_SAFE=$(echo "$BRANCH" | tr ' ' '_')
+        PROJECT_SAFE=$(echo "$PROJECT" | tr ' ' '_')
+
         # Formato InfluxDB line protocol: measurement,tag=value field=value timestamp_ns
         INFLUX_TIMESTAMP="${TIMESTAMP}000000000"
-        echo "cdd_pipeline,branch=$BRANCH,project=$PROJECT success=1,duration_seconds=$DURATION $INFLUX_TIMESTAMP" > /tmp/metrics.txt
+        echo "cdd_pipeline,branch=${BRANCH_SAFE},project=${PROJECT_SAFE} success=1,duration_seconds=$DURATION $INFLUX_TIMESTAMP" > /tmp/metrics.txt
         echo "Payload: $(cat /tmp/metrics.txt)"
 
         RESPONSE=$(curl --silent --write-out "HTTP_CODE:%{http_code}" \
@@ -443,8 +447,13 @@ jobs:
 
         # Prometheus (Grafana Cloud via InfluxDB line protocol)
         INFLUX_URL=$(echo "$PROMETHEUS_ENDPOINT" | sed 's|prometheus-prod|influx-prod|' | sed 's|/api/prom/push|/api/v1/push/influx/write|')
+
+        # Escapa espacos nas tags
+        BRANCH_SAFE=$(echo "$BRANCH" | tr ' ' '_')
+        PROJECT_SAFE=$(echo "$PROJECT" | tr ' ' '_')
+
         INFLUX_TIMESTAMP="${TIMESTAMP}000000000"
-        echo "cdd_pipeline,branch=$BRANCH,project=$PROJECT success=0 $INFLUX_TIMESTAMP" > /tmp/metrics.txt
+        echo "cdd_pipeline,branch=${BRANCH_SAFE},project=${PROJECT_SAFE} success=0 $INFLUX_TIMESTAMP" > /tmp/metrics.txt
 
         RESPONSE=$(curl --silent --write-out "HTTP_CODE:%{http_code}" \
           -X POST "$INFLUX_URL" \
