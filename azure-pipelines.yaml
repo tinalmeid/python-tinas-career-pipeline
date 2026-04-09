@@ -198,8 +198,7 @@ jobs:
           sonar.python.coverage.reportPaths=$(System.DefaultWorkingDirectory)/coverage.xml
           sonar.javascript.lcov.reportPaths=$(System.DefaultWorkingDirectory)/coverage/lcov.info
           sonar.sources=.
-          sonar.tests=tests
-          sonar.exclusions=**/tests/**,**/test_*.py,**/venv/**,**/__pycache__/**,**/.pytest_cache/**
+          sonar.exclusions=**/venv/**,**/__pycache__/**,**/.pytest_cache/**
       displayName: 'Preparar SonarCloud (Python / JS)'
 
     # ===============================================================================
