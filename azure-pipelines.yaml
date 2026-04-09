@@ -33,7 +33,6 @@ pr:
     include:
       - main
 
-# CORREÇÃO: vmImage (camelCase) é obrigatório para o Azure localizar o agente
 pool:
   vmImage: 'ubuntu-latest'
 
@@ -41,7 +40,7 @@ variables:
   - group: DATADOG_API_KEY      # Segredo: DATADOG_API_KEY
   - group: OBSERVABILITY_KEYS   # Segredos: LOKI_URL, LOKI_USER, LOKI_TOKEN, etc
   - name: SONAR_PROJECT_KEY
-    value: 'tinalmeid_python_tinas_career_pipeline'
+    value: 'tinalmeid_python-tinas-career-pipeline'
   - name: OBS_JOB_NAME
     value: 'azure-pipeline-tinas-career'
 
@@ -66,11 +65,18 @@ jobs:
 
     - script: |
         echo "📦 Atualizando pip e instalando ferramentas de qualidade..."
-        pip install --upgrade pip
-        pip install pytest pytest-cov httpx python-snappy
+        python -m pip install --upgrade pip
+        # Adicionamos 'requests' aqui explicitamente
+        python -m pip install pytest pytest-cov httpx requests python-snappy
+
         if [ -f "requirements.txt" ]; then
           echo "📂 Instalando dependências do projeto..."
-          pip install -r requirements.txt
+          python -m pip install -r requirements.txt
+        fi
+
+        if [ -f "requirements-dev.txt" ]; then
+          echo "📂 Instalando dependências de desenvolvimento..."
+          python -m pip install -r requirements-dev.txt
         fi
       displayName: '📦 Passo 4: Instalar Dependências'
 
