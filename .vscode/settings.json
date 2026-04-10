@@ -11,14 +11,5 @@
     "sonarlint.connectedMode.project": {
         "connectionId": "tinalmeid",
         "projectKey": "tinalmeid_python_tinas_carrer_pipeline"
-    },
-    "yaml.validate": false,
-    "azure-pipelines.configure": false,
-    "[yaml]": {
-        "editor.defaultFormatter": "redhat.vscode-yaml"
-    },
-    "yaml.schemas": {},
-    "cSpell.words": [
-        "espacos"
-    ]
+    }
 }
