@@ -11,7 +11,7 @@
 #
 # AUTOR          : Cristina de Almeida
 # DATA           : Abril de 2026
-# VERSION        : 1.0.6
+# VERSION        : 1.0.7
 # ===================================================================================
 # É necessário configurar a pipeline no Azure DevOps:
 # 1. Vá em Pipelines -> New Pipeline.
@@ -46,35 +46,79 @@ variables:
     value: 'tinalmeid'
 
   - name: SONAR_PROJECT_KEY
-    value: 'tinalmeid_python_tinas_career_pipeline'
+    value: 'tinalmeid_python-tinas-career-pipeline'
+
+  - name: SONAR_PROJECT_NAME
+    value: 'tinalmeid_python-tinas-career-pipeline'
+
+  - name: SONAR_SERVICE_CONNECTION
+    value: 'SonarCloud-Service-Connection'
+
+  # Versoes de runtime
+  - name: PYTHON_VERSION
+    value: '3.12'
+
+  - name: NODE_VERSION
+    value: '18'
+
+  # Flags de linguagem
+  - name: isPython
+    value: 'false'
+
+  - name: isCSharp
+    value: 'false'
+
+  - name: isCpp
+    value: 'false'
+
+  - name: isKotlin
+    value: 'false'
+
+  - name: isJava
+    value: 'false'
+
+  - name: isJS
+    value: 'false'
+
+  # Observabilidade
+  - name: DATADOG_API_URL
+    value: 'https://api.datadoghq.com/api/v1/series'
+
   - name: OBS_JOB_NAME
     value: 'azure-pipeline'
 
 jobs:
 - job: SmartBuild
-  displayName: 'Build and Quality - Deteccao Automatica'
+  displayName: '🚀 Build and Quality - Detecção Automática'
 
   steps:
 
     # ===============================================================================
-    # PASSO 0 - CHECKOUT
+    # PASSO 1 - CHECKOUT
     # ===============================================================================
     - checkout: self
       fetchDepth: 0
       displayName: '📥 Passo 1: Checkout do Código'
 
     # ===============================================================================
-    # PASSO 0b - CAPTURAR TIMESTAMP DE INICIO
+    # PASSO 2 - CAPTURAR TIMESTAMP DE INICIO
     # ===============================================================================
     - script: |
         echo "##vso[task.setvariable variable=PIPELINE_START_TIME]$(date +%s)"
+        echo "Timestamp de inicio registrado: $(date +%s)"
       displayName: '⏱️ Passo 2: Registrar Início'
 
+    # ===============================================================================
+    # PASSO 3 - CONFIGURAR PYTHON
+    # ===============================================================================
     - task: UsePythonVersion@0
       inputs:
-        versionSpec: '3.12'
-      displayName: '🐍 Passo 3: Configurar Ambiente Python'
+        versionSpec: $(PYTHON_VERSION)
+      displayName: '🐍 Passo 3: Configurar Python $(PYTHON_VERSION)'
 
+    # ===============================================================================
+    # PASSO 4 - DETECÇÃO DA LINGUAGEM
+    # ===============================================================================
     - script: |
         echo "Inspecionando arquivos do repositorio..."
 
@@ -103,14 +147,47 @@ jobs:
           echo "##vso[task.setvariable variable=isJS]true"
 
         else
-          echo "⚠️ Nenhum teste encontrado. Gerando relatório de cobertura vazio para o Sonar."
-          printf '<?xml version="1.0" ?>\n<coverage version="7.4"/>\n' > coverage.xml
+          echo "##[error] Nenhum manifesto reconhecido encontrado."
+          exit 1
         fi
-      displayName: '🧪 Passo 5: Executar Testes & Cobertura'
+      displayName: '🔍 Passo 4: Identificar Linguagem'
 
-    # -------------------------------------------------------------------------------
-    # SONARCLOUD: Configurado com exclusões para garantir o Quality Gate
-    # -------------------------------------------------------------------------------
+    # ===============================================================================
+    # PASSO 5 - INSTALAR DEPENDENCIAS
+    # ===============================================================================
+    - script: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pytest pytest-cov
+      condition: eq(variables['isPython'], 'true')
+      displayName: '📦 Passo 5: Instalar Dependências'
+
+    # ===============================================================================
+    # PASSO 6 - EXECUTAR TESTES
+    # ===============================================================================
+    - script: |
+        if find . -name "test_*.py" -o -name "*_test.py" 2>/dev/null | grep -q .; then
+          echo "Testes encontrados! Executando pytest..."
+          pytest --cov=. --cov-report=xml --cov-report=term
+          echo "##vso[task.setvariable variable=testsFound]true"
+        else
+          echo "Nenhum teste encontrado - PR de configuracao/setup"
+          echo "##vso[task.setvariable variable=testsFound]false"
+
+          # Cria um coverage.xml vazio mas valido
+          echo '<?xml version="1.0" ?>' > coverage.xml
+          echo '<coverage version="7.0" timestamp="1234567890" lines-valid="0" lines-covered="0" line-rate="0" branches-valid="0" branches-covered="0" branch-rate="0" complexity="0">' >> coverage.xml
+          echo '  <packages>' >> coverage.xml
+          echo '  </packages>' >> coverage.xml
+          echo '</coverage>' >> coverage.xml
+          echo "coverage.xml vazio criado para SonarCloud"
+        fi
+      condition: eq(variables['isPython'], 'true')
+      displayName: '🧪 Passo 6: Executar Testes & Cobertura'
+
+    # ===============================================================================
+    # PASSO 7 - SONARCLOUD PREPARE
+    # ===============================================================================
     - task: SonarCloudPrepare@4
       condition: or(eq(variables['isPython'], 'true'), eq(variables['isJS'], 'true'))
       inputs:
@@ -122,22 +199,28 @@ jobs:
         cliProjectName: $(SONAR_PROJECT_NAME)
         extraProperties: |
           sonar.python.version=3.12
-          sonar.python.coverage.reportPaths=coverage.xml
-          # EXCLUSÕES: Ignora arquivos de sistema e scripts sem testes para bater a meta de 80%
-          sonar.exclusions=**/venv/**,**/__pycache__/**,**/tests/**
-          sonar.coverage.exclusions=scripts/push_observability.py
-      displayName: '☁️ Passo 6: Configurar Qualidade (SonarCloud)'
+          sonar.python.coverage.reportPaths=$(System.DefaultWorkingDirectory)/coverage.xml
+          sonar.sources=.
+          sonar.exclusions=**/venv/**,**/__pycache__/**,**/.pytest_cache/**
+      displayName: '☁️ Passo 7: Configurar SonarCloud'
 
+    # ===============================================================================
+    # PASSO 8 - SONARCLOUD ANALYZE
+    # ===============================================================================
     - task: SonarCloudAnalyze@4
-      displayName: '☁️ Passo 7: Analisar Código'
+      displayName: '🔬 Passo 8: Analisar Código'
 
+    # ===============================================================================
+    # PASSO 9 - SONARCLOUD PUBLISH
+    # ===============================================================================
     - task: SonarCloudPublish@4
-      displayName: '☁️ Passo 8: Publicar Resultados'
+      inputs:
+        pollingTimeoutSec: '300'
+      displayName: '📊 Passo 9: Publicar Resultados'
 
-    # -------------------------------------------------------------------------------
-    # OBSERVABILIDADE: Envio de sinais para Datadog e Grafana Cloud
-    # SEGURANÇA: Todas as variáveis $(Var) são mapeadas no bloco 'env'
-    # -------------------------------------------------------------------------------
+    # ===============================================================================
+    # PASSO 10 - OBSERVABILIDADE SUCESSO
+    # ===============================================================================
     - script: |
         END_TIME=$(date +%s)
         DURATION=$((END_TIME - START_TIME))
@@ -145,7 +228,7 @@ jobs:
 
         echo "Build concluido em ${DURATION}s. Enviando metricas..."
 
-        # Escapa espacos nas tags (substitui por underscore)
+        # Escapa espacos nas tags
         BRANCH_SAFE=$(echo "$BRANCH" | tr ' ' '_')
         PROJECT_SAFE=$(echo "$PROJECT" | tr ' ' '_')
         REPO_SAFE=$(echo "$REPO" | tr ' ' '_')
@@ -213,11 +296,9 @@ jobs:
         # ------------------------------------------------------------------
         # 3. GRAFANA CLOUD - PROMETHEUS (metricas via InfluxDB line protocol)
         # ------------------------------------------------------------------
-        # Constroi URL do InfluxDB a partir da URL do Prometheus
         INFLUX_URL=$(echo "$PROMETHEUS_ENDPOINT" | sed 's|prometheus-prod|influx-prod|' | sed 's|/api/prom/push|/api/v1/push/influx/write|')
         echo "InfluxDB URL construida: $INFLUX_URL"
 
-        # Formato InfluxDB line protocol: measurement,tag=value field=value timestamp_ns
         INFLUX_TIMESTAMP="${TIMESTAMP}000000000"
         echo "cdd_pipeline,branch=${BRANCH_SAFE},project=${PROJECT_SAFE},repo=${REPO_SAFE} success=1,duration_seconds=$DURATION $INFLUX_TIMESTAMP" > /tmp/metrics.txt
         echo "Payload: $(cat /tmp/metrics.txt)"
@@ -238,7 +319,7 @@ jobs:
         fi
 
       condition: succeeded()
-      displayName: '📡 Passo 9: Observabilidade (Sucesso)'
+      displayName: '📡 Passo 10: Observabilidade (Sucesso)'
       env:
         DD_API_KEY: $(DATADOG_API_KEY)
         BRANCH: $(Build.SourceBranchName)
@@ -255,14 +336,135 @@ jobs:
         PROMETHEUS_TOKEN: $(PROMETHEUS_TOKEN)
         JOB_NAME: $(OBS_JOB_NAME)
         START_TIME: $(PIPELINE_START_TIME)
-        B_NAME: $(Build.SourceBranchName)
-        DD_KEY: $(DATADOG_API_KEY)
-        DD_URL: https://api.datadoghq.com/api/v1/series
-        L_URL: $(LOKI_URL)
-        L_USER: $(LOKI_USER)
-        L_TOKEN: $(LOKI_TOKEN)
-        J_NAME: $(OBS_JOB_NAME)
+        IS_PYTHON: $(isPython)
+        IS_JS: $(isJS)
+        IS_CSHARP: $(isCSharp)
+        IS_CPP: $(isCpp)
+        IS_JAVA: $(isJava)
+        IS_KOTLIN: $(isKotlin)
 
+    # ===============================================================================
+    # PASSO 11 - OBSERVABILIDADE FALHA
+    # ===============================================================================
+    - script: |
+        TIMESTAMP=$(date +%s)
+        LOKI_TIMESTAMP="${TIMESTAMP}000000000"
+
+        echo "Build falhou. Enviando alertas de falha..."
+
+        # Escapa espacos nas tags
+        BRANCH_SAFE=$(echo "$BRANCH" | tr ' ' '_')
+        PROJECT_SAFE=$(echo "$PROJECT" | tr ' ' '_')
+        REPO_SAFE=$(echo "$REPO" | tr ' ' '_')
+
+        # Datadog
+        curl --silent \
+          -X POST "$DATADOG_URL" \
+          -H "Content-Type: application/json" \
+          -H "DD-API-KEY: $DD_API_KEY" \
+          -d "{
+            \"series\": [{
+              \"metric\": \"cdd.pipeline.failure\",
+              \"points\": [[$TIMESTAMP, 1]],
+              \"tags\": [\"project:$PROJECT_SAFE\", \"repo:$REPO_SAFE\", \"branch:$BRANCH_SAFE\"]
+            }]
+          }" \
+          && echo "Datadog: alerta de falha enviado." \
+          || echo "Datadog: falha ao enviar alerta."
+
+        # Loki (Grafana Cloud)
+        curl --silent \
+          -X POST "$LOKI_ENDPOINT/loki/api/v1/push" \
+          -H "Content-Type: application/json" \
+          -u "$LOKI_USER:$LOKI_TOKEN" \
+          -d "{
+            \"streams\": [{
+              \"stream\": {
+                \"job\":     \"$JOB_NAME\",
+                \"project\": \"$PROJECT_SAFE\",
+                \"repo\":    \"$REPO_SAFE\",
+                \"branch\":  \"$BRANCH_SAFE\",
+                \"status\":  \"failure\"
+              },
+              \"values\": [[
+                \"$LOKI_TIMESTAMP\",
+                \"[FAILURE] Pipeline falhou | Repo=$REPO | Build=$BUILD_ID | Commit=$COMMIT\"
+              ]]
+            }]
+          }" \
+          && echo "Loki: log de falha enviado." \
+          || echo "Loki: falha ao enviar log."
+
+        # Prometheus (Grafana Cloud via InfluxDB line protocol)
+        INFLUX_URL=$(echo "$PROMETHEUS_ENDPOINT" | sed 's|prometheus-prod|influx-prod|' | sed 's|/api/prom/push|/api/v1/push/influx/write|')
+
+        INFLUX_TIMESTAMP="${TIMESTAMP}000000000"
+        echo "cdd_pipeline,branch=${BRANCH_SAFE},project=${PROJECT_SAFE},repo=${REPO_SAFE} success=0 $INFLUX_TIMESTAMP" > /tmp/metrics.txt
+
+        RESPONSE=$(curl --silent --write-out "HTTP_CODE:%{http_code}" \
+          -X POST "$INFLUX_URL" \
+          -H "Content-Type: text/plain" \
+          -u "$PROMETHEUS_USER:$PROMETHEUS_TOKEN" \
+          --data-binary @/tmp/metrics.txt 2>&1)
+
+        HTTP_CODE=$(echo "$RESPONSE" | grep -o "HTTP_CODE:[0-9]*" | cut -d: -f2)
+
+        if [ "$HTTP_CODE" = "204" ] || [ "$HTTP_CODE" = "200" ]; then
+          echo "Prometheus: metrica de falha enviada. HTTP $HTTP_CODE"
+        else
+          BODY=$(echo "$RESPONSE" | sed 's/HTTP_CODE:[0-9]*$//')
+          echo "Prometheus: falha HTTP $HTTP_CODE - $BODY"
+        fi
+
+      condition: failed()
+      displayName: '🚨 Passo 11: Observabilidade (Falha)'
+      env:
+        DD_API_KEY: $(DATADOG_API_KEY)
+        BRANCH: $(Build.SourceBranchName)
+        PROJECT: $(System.TeamProject)
+        REPO: $(Build.Repository.Name)
+        BUILD_ID: $(Build.BuildId)
+        COMMIT: $(Build.SourceVersion)
+        DATADOG_URL: $(DATADOG_API_URL)
+        LOKI_ENDPOINT: $(LOKI_URL)
+        LOKI_USER: $(LOKI_USER)
+        LOKI_TOKEN: $(LOKI_TOKEN)
+        PROMETHEUS_ENDPOINT: $(PROMETHEUS_URL)
+        PROMETHEUS_USER: $(PROMETHEUS_USER)
+        PROMETHEUS_TOKEN: $(PROMETHEUS_TOKEN)
+        JOB_NAME: $(OBS_JOB_NAME)
+
+    # ===============================================================================
+    # PASSO 12 - RESUMO
+    # ===============================================================================
+    - script: |
+        echo "=========================================="
+        echo "🚀 CI - python-tinas-career-pipeline"
+        echo "=========================================="
+        echo "✅ Pipeline concluído com sucesso!"
+        echo "📊 Branch: $BRANCH"
+        echo "📦 Build ID: $BUILD_ID"
+        echo "🔗 Commit: $COMMIT"
+
+        if [ "$TESTS_FOUND" = 'true' ]; then
+          echo "✅ Testes foram executados e resultados publicados."
+        else
+          echo "⚠️ Nenhum teste encontrado - Pipeline de configuracao/setup."
+          echo "💡 Adicione testes posteriormente para obter metricas de cobertura."
+        fi
+
+        echo "=========================================="
+      condition: succeeded()
+      displayName: '📝 Passo 12: Resumo da Execução'
+      env:
+        BRANCH: $(Build.SourceBranchName)
+        BUILD_ID: $(Build.BuildId)
+        COMMIT: $(Build.SourceVersion)
+        TESTS_FOUND: $(testsFound)
+
+    # ===============================================================================
+    # PASSO 13 - NOTIFICAÇÃO DE FALHA
+    # ===============================================================================
     - script: |
         echo "=========================================="
         echo "❌ PIPELINE FALHOU"
@@ -273,7 +475,7 @@ jobs:
         echo "=========================================="
         echo "💡 Verifique os logs acima para mais detalhes"
       condition: failed()
-      displayName: '🚨 Passo 10: Observabilidade (Falha)'
+      displayName: '🚨 Passo 13: Notificação de Falha'
       env:
         BRANCH: $(Build.SourceBranchName)
         BUILD_ID: $(Build.BuildId)
