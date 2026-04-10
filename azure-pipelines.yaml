@@ -56,7 +56,7 @@ variables:
 
   # Versoes de runtime
   - name: PYTHON_VERSION
-    value: '3.12'
+    value: '3.10'
 
   - name: NODE_VERSION
     value: '18'
