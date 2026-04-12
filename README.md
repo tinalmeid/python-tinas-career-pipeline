@@ -161,9 +161,9 @@ Monitoramento de tarefas de desenvolvimento com base no fluxo de trabalho de Eng
 | --------- | ------- | --------- | ------- |
 | ENG-659 | Setup do projeto e ambiente virtual | ENG-659-infra/python-setup | ✅ Concluído |
 | ENG-660 | SonarCloud e GitHub Actions CI | ENG-660-infra/sonarcloud-ci | ✅ Concluído |
-| ENG-661 | Docker Compose observabilidade local | ENG-661-infra/docker-observability | 🚧 Em Andamento |
-| ENG-662 | Segurança e feature toggles | ENG-662-infra/security-toggles | 📝 A Fazer |
-| ENG-663 | README completo e badges | ENG-663-docs/readme | 🚧 Em Andamento |
+| ENG-661 | Docker Compose observabilidade local | ENG-661-infra/docker-observability | ✅ Concluído |
+| ENG-662 | Segurança e feature toggles | ENG-662-infra/security-toggles | ✅ Concluído |
+| ENG-663 | README completo e badges | ENG-663-docs/readme | ✅ Concluído |
 | ENG-664 | Documentação API Swagger/OpenAPI | ENG-664-docs/api-docs | 📝 A Fazer |
 | ENG-665 | Modelos de dados Pydantic | ENG-665-core/models-pydantic | 📝 A Fazer |
 | ENG-666 | Schema e migrações Alembic | ENG-666-core/schema-migrations | 📝 A Fazer |

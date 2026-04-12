@@ -11,7 +11,7 @@
 #
 # AUTOR          : Cristina de Almeida
 # DATA           : Abril de 2026
-# VERSION        : 1.0.5
+# VERSION        : 1.0.7
 # ===================================================================================
 # É necessário configurar a pipeline no Azure DevOps:
 # 1. Vá em Pipelines -> New Pipeline.
@@ -56,25 +56,10 @@ variables:
 
   # Versoes de runtime
   - name: PYTHON_VERSION
-    value: '3.10'
+    value: '3.12'
 
   - name: NODE_VERSION
     value: '18'
-
-  - name: DOTNET_VERSION
-    value: '8.x'
-
-  - name: CSHARP_VERSION
-    value: '10.0'
-
-  - name: CPLUSPLUS_VERSION
-    value: '17'
-
-  - name: KOTLIN_VERSION
-    value: '1.8'
-
-  - name: JAVA_VERSION
-    value: '17'
 
   # Flags de linguagem
   - name: isPython
@@ -121,10 +106,18 @@ jobs:
     - script: |
         echo "##vso[task.setvariable variable=PIPELINE_START_TIME]$(date +%s)"
         echo "Timestamp de inicio registrado: $(date +%s)"
-      displayName: 'Registrar Inicio do Pipeline'
+      displayName: '⏱️ Passo 2: Registrar Início'
 
     # ===============================================================================
-    # PASSO 1 - DETECCAO DA LINGUAGEM
+    # PASSO 3 - CONFIGURAR PYTHON
+    # ===============================================================================
+    - task: UsePythonVersion@0
+      inputs:
+        versionSpec: $(PYTHON_VERSION)
+      displayName: '🐍 Passo 3: Configurar Python $(PYTHON_VERSION)'
+
+    # ===============================================================================
+    # PASSO 4 - DETECÇÃO DA LINGUAGEM
     # ===============================================================================
     - script: |
         echo "Inspecionando arquivos do repositorio..."
@@ -155,35 +148,45 @@ jobs:
 
         else
           echo "##[error] Nenhum manifesto reconhecido encontrado."
-          echo "##[error] Esperado: requirements.txt | pyproject.toml | package.json | *.csproj"
           exit 1
         fi
-      displayName: 'Identificando Tecnologia do Repositorio'
+      displayName: '🔍 Passo 4: Identificar Linguagem'
 
     # ===============================================================================
-    # PASSO 2 - SETUP DE RUNTIME
+    # PASSO 5 - INSTALAR DEPENDENCIAS
     # ===============================================================================
-    - task: UsePythonVersion@0
+    - script: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pytest pytest-cov
       condition: eq(variables['isPython'], 'true')
-      inputs:
-        versionSpec: $(PYTHON_VERSION)
-      displayName: 'Configurar Python $(PYTHON_VERSION)'
-
-    - task: UseDotNet@2
-      condition: eq(variables['isCSharp'], 'true')
-      inputs:
-        packageType: 'sdk'
-        version: '8.x'
-      displayName: 'Configurar .NET SDK 8.x'
-
-    - task: UseNode@1
-      condition: eq(variables['isJS'], 'true')
-      inputs:
-        version: $(NODE_VERSION)
-      displayName: 'Configurar Node.js $(NODE_VERSION)'
+      displayName: '📦 Passo 5: Instalar Dependências'
 
     # ===============================================================================
-    # PASSO 3 - PREPARAR ANALISE SONARCLOUD
+    # PASSO 6 - EXECUTAR TESTES
+    # ===============================================================================
+    - script: |
+        if find . -name "test_*.py" -o -name "*_test.py" 2>/dev/null | grep -q .; then
+          echo "Testes encontrados! Executando pytest..."
+          pytest --cov=. --cov-report=xml --cov-report=term
+          echo "##vso[task.setvariable variable=testsFound]true"
+        else
+          echo "Nenhum teste encontrado - PR de configuracao/setup"
+          echo "##vso[task.setvariable variable=testsFound]false"
+
+          # Cria um coverage.xml vazio mas valido
+          echo '<?xml version="1.0" ?>' > coverage.xml
+          echo '<coverage version="7.0" timestamp="1234567890" lines-valid="0" lines-covered="0" line-rate="0" branches-valid="0" branches-covered="0" branch-rate="0" complexity="0">' >> coverage.xml
+          echo '  <packages>' >> coverage.xml
+          echo '  </packages>' >> coverage.xml
+          echo '</coverage>' >> coverage.xml
+          echo "coverage.xml vazio criado para SonarCloud"
+        fi
+      condition: eq(variables['isPython'], 'true')
+      displayName: '🧪 Passo 6: Executar Testes & Cobertura'
+
+    # ===============================================================================
+    # PASSO 7 - SONARCLOUD PREPARE
     # ===============================================================================
     - task: SonarCloudPrepare@4
       condition: or(eq(variables['isPython'], 'true'), eq(variables['isJS'], 'true'))
@@ -195,68 +198,17 @@ jobs:
         cliProjectKey: $(SONAR_PROJECT_KEY)
         cliProjectName: $(SONAR_PROJECT_NAME)
         extraProperties: |
+          sonar.python.version=3.12
           sonar.python.coverage.reportPaths=$(System.DefaultWorkingDirectory)/coverage.xml
-          sonar.javascript.lcov.reportPaths=$(System.DefaultWorkingDirectory)/coverage/lcov.info
           sonar.sources=.
           sonar.exclusions=**/venv/**,**/__pycache__/**,**/.pytest_cache/**
-      displayName: 'Preparar SonarCloud (Python / JS)'
+      displayName: '☁️ Passo 7: Configurar SonarCloud'
 
     # ===============================================================================
-    # PASSO 4 - INSTALAR DEPENDENCIAS + RODAR TESTES
-    # ===============================================================================
-
-    # --- 4a. Python: Instalar dependencias ---
-    - script: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install pytest pytest-cov
-      condition: eq(variables['isPython'], 'true')
-      displayName: 'Instalar dependencias Python'
-
-    # --- 4b. Python: Rodar testes (COM VERIFICACAO SE EXISTEM) ---
-    - script: |
-        # Verifica se existem arquivos de teste
-        if find . -name "test_*.py" -o -name "*_test.py" 2>/dev/null | grep -q .; then
-          echo "Testes encontrados! Executando pytest..."
-          pytest --cov=. --cov-report=xml --cov-report=term
-          echo "##vso[task.setvariable variable=testsFound]true"
-        else
-          echo "Nenhum teste encontrado - PR de configuracao/setup"
-          echo "Testes devem ser adicionados posteriormente"
-          echo "##vso[task.setvariable variable=testsFound]false"
-
-          # Cria um coverage.xml vazio mas valido (sem arquivos ficticios)
-          echo '<?xml version="1.0" ?>' > coverage.xml
-          echo '<coverage version="7.0" timestamp="1234567890" lines-valid="0" lines-covered="0" line-rate="0" branches-valid="0" branches-covered="0" branch-rate="0" complexity="0">' >> coverage.xml
-          echo '  <packages>' >> coverage.xml
-          echo '  </packages>' >> coverage.xml
-          echo '</coverage>' >> coverage.xml
-          echo "coverage.xml vazio criado para SonarCloud"
-        fi
-      condition: eq(variables['isPython'], 'true')
-      displayName: 'Testes Python + Cobertura'
-
-    # --- 4c. Python: Corrigir caminhos no coverage.xml ---
-    - script: |
-        if [ -f coverage.xml ]; then
-          if grep -q 'filename="src/' coverage.xml; then
-            echo "Caminhos ja estao no formato correto."
-          else
-            echo "Corrigindo caminhos absolutos no coverage.xml..."
-            sed -i -E 's|filename="[^"]*/src/|filename="src/|g' coverage.xml
-            echo "Correcao aplicada."
-          fi
-          echo "Amostra do arquivo:"
-          head -20 coverage.xml
-        fi
-      condition: eq(variables['isPython'], 'true')
-      displayName: 'Corrigir Caminhos no coverage.xml'
-
-    # ===============================================================================
-    # PASSO 5 - EXECUTAR E PUBLICAR ANALISE SONARCLOUD
+    # PASSO 8 - SONARCLOUD ANALYZE
     # ===============================================================================
     - task: SonarCloudAnalyze@4
-      displayName: 'Executar Scan SonarCloud'
+      displayName: '🔬 Passo 8: Analisar Código'
 
     # ===============================================================================
     # PASSO 9 - SONARCLOUD PUBLISH
@@ -264,24 +216,11 @@ jobs:
     - task: SonarCloudPublish@4
       inputs:
         pollingTimeoutSec: '300'
-      displayName: 'Publicar Metricas no Dashboard'
+      displayName: '📊 Passo 9: Publicar Resultados'
 
     # ===============================================================================
-    # PASSO 6 - PUBLICAR RESULTADOS DE TESTES NO AZURE
+    # PASSO 10 - OBSERVABILIDADE SUCESSO
     # ===============================================================================
-    - task: PublishTestResults@2
-      condition: and(always(), eq(variables['testsFound'], 'true'))
-      inputs:
-        testResultsFormat: 'JUnit'
-        testResultsFiles: '**/test-results*.xml'
-        failTaskOnFailedTests: true
-      displayName: 'Publicar Resultados de Testes'
-
-    # ===============================================================================
-    # PASSO 7 - OBSERVABILIDADE (Datadog + Grafana Cloud)
-    # ===============================================================================
-
-    # --- 7a. Observabilidade: SUCESSO ---
     - script: |
         END_TIME=$(date +%s)
         DURATION=$((END_TIME - START_TIME))
@@ -380,7 +319,7 @@ jobs:
         fi
 
       condition: succeeded()
-      displayName: 'Observabilidade - Sucesso'
+      displayName: '📡 Passo 10: Observabilidade (Sucesso)'
       env:
         DD_API_KEY: $(DATADOG_API_KEY)
         BRANCH: $(Build.SourceBranchName)
@@ -404,7 +343,9 @@ jobs:
         IS_JAVA: $(isJava)
         IS_KOTLIN: $(isKotlin)
 
-    # --- 7b. Observabilidade: FALHA ---
+    # ===============================================================================
+    # PASSO 11 - OBSERVABILIDADE FALHA
+    # ===============================================================================
     - script: |
         TIMESTAMP=$(date +%s)
         LOKI_TIMESTAMP="${TIMESTAMP}000000000"
@@ -476,7 +417,7 @@ jobs:
         fi
 
       condition: failed()
-      displayName: 'Observabilidade - Falha'
+      displayName: '🚨 Passo 11: Observabilidade (Falha)'
       env:
         DD_API_KEY: $(DATADOG_API_KEY)
         BRANCH: $(Build.SourceBranchName)
@@ -494,7 +435,7 @@ jobs:
         JOB_NAME: $(OBS_JOB_NAME)
 
     # ===============================================================================
-    # PASSO 8 - RESUMO E CONCLUSÕES
+    # PASSO 12 - RESUMO
     # ===============================================================================
     - script: |
         echo "=========================================="
@@ -514,7 +455,7 @@ jobs:
 
         echo "=========================================="
       condition: succeeded()
-      displayName: '📝 Resumo da Execução'
+      displayName: '📝 Passo 12: Resumo da Execução'
       env:
         BRANCH: $(Build.SourceBranchName)
         BUILD_ID: $(Build.BuildId)
@@ -522,7 +463,7 @@ jobs:
         TESTS_FOUND: $(testsFound)
 
     # ===============================================================================
-    # PASSO 9 - NOTIFICAÇÃO DE FALHA
+    # PASSO 13 - NOTIFICAÇÃO DE FALHA
     # ===============================================================================
     - script: |
         echo "=========================================="
@@ -534,7 +475,7 @@ jobs:
         echo "=========================================="
         echo "💡 Verifique os logs acima para mais detalhes"
       condition: failed()
-      displayName: '🚨 Notificação de Falha'
+      displayName: '🚨 Passo 13: Notificação de Falha'
       env:
         BRANCH: $(Build.SourceBranchName)
         BUILD_ID: $(Build.BuildId)

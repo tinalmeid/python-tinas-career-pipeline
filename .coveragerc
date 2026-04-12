@@ -1,0 +1,11 @@
+[run]
+# Informa ao coverage para usar caminhos relativos
+relative_files = True
+# Define a fonte principal
+source = src
+
+[report]
+# Garante que ele ignore arquivos de teste na contagem de cobertura
+omit =
+    tests/*
+    **/__init__.py

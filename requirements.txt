@@ -56,5 +56,7 @@ opentelemetry-instrumentation-fastapi==0.49b2  # Monitora FastAPI
 # -----------------------------------------------------------------------------------
 python-dateutil==2.9.0     # Manipulação de datas (mais flexível que datetime)
 tenacity==9.0.0            # Retry automático (re-tenta operações que falham)
+pylint-django              # Lint para projetos Django (opcional, mas recomendado para qualidade de código)
+django                     # Required for pylint-django (pode ser removido se não usar Django, mas é leve e ajuda na lintagem)
 
 # @File Fim do arquivo requirements.txt

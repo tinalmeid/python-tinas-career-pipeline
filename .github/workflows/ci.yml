@@ -72,7 +72,7 @@ jobs:
           # Verificar se existem testes
           if find . -name "test_*.py" -o -name "*_test.py" | grep -q . ; then
             echo "✅ Testes encontrados! Executando pytest..."
-            pytest --cov=. --cov-report=xml --cov-report=term
+            pytest --cov=src --cov-report=xml:coverage.xml --cov-report=term-missing
             echo "tests_encontrados=true" >> $GITHUB_OUTPUT
           else
             echo "⚠️ Nenhum teste encontrado - PR de configuração/setup"
@@ -109,7 +109,7 @@ jobs:
         with:
           args: >
             -Dsonar.python.version=3.12
-            -Dsonar.coverageReportPaths=coverage.xml
+            -Dsonar.python.coverage.reportPaths=coverage.xml
         # Sempre roda, mesmo sem testes (coverage.xml vazio evita erro)
 
       # 7. Resumo do status

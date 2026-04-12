@@ -6,7 +6,8 @@
     },
     "yaml.schemas": {},
     "cSpell.words": [
-        "espacos"
+        "espacos",
+        "lintagem"
     ],
     "sonarlint.connectedMode.project": {
         "connectionId": "tinalmeid",
